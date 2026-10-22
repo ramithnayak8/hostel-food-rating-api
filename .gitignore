@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Tooling caches and reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+reports/
+
+# Local data and secrets
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
+kubeconfig*
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

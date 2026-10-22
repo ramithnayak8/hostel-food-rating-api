@@ -1,0 +1,2 @@
+# Kept separate: locust pulls in gevent, which nobody needs for day-to-day development.
+locust==2.47.0

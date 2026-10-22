@@ -1,0 +1,17 @@
+# Runtime dependencies (pinned). Dependabot keeps these current.
+fastapi==0.157.0
+starlette==1.9.0
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.1.5
+alembic==1.20.0
+psycopg[binary]==3.3.6
+pydantic==2.14.1
+pydantic-settings==2.16.1
+email-validator==2.3.0
+PyJWT==2.15.1
+argon2-cffi==25.1.0
+slowapi==0.1.10
+limits==5.8.0
+prometheus-client==0.26.0
+prometheus-fastapi-instrumentator==8.1.0
+python-json-logger==4.2.0
