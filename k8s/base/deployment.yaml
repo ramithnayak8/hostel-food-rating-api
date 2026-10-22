@@ -103,12 +103,15 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          # Up to 120s to boot: imports are slow when a busy node throttles the CPU limit, and a
+          # pod killed mid-start only restarts slower.
           startupProbe:
             httpGet:
               path: /health
               port: http
-            periodSeconds: 2
-            failureThreshold: 30
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 40
           livenessProbe:
             httpGet:
               path: /health
