@@ -1,0 +1,29 @@
+# The image only exists inside the kind node (loaded, not pulled), so never try to pull it.
+# Small CPU requests make the 60% HPA target easy to cross during the load-test demo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostel-food-api
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: migrate
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+      containers:
+        - name: api
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi

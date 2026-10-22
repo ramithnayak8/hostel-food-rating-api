@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hostel-food-api
+  labels:
+    app.kubernetes.io/name: hostel-food-api
+    app.kubernetes.io/component: api
+  annotations:
+    # Matches the app's MAX_REQUEST_BODY_BYTES (64 KiB) with headroom; nginx rejects bigger bodies first.
+    nginx.ingress.kubernetes.io/proxy-body-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hostel-food.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hostel-food-api
+                port:
+                  name: http

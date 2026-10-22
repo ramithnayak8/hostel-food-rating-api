@@ -1,0 +1,44 @@
+# kind overlay: locally built image, smaller resource requests (so the HPA demo scales visibly),
+# a localtest.me ingress host, and throwaway dev secrets. Never use this overlay outside kind.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hostel-food
+
+resources:
+  - ../../base
+
+images:
+  # Built by scripts/kind-up.sh and loaded into the cluster with `kind load docker-image`.
+  - name: ghcr.io/OWNER/hostel-food-rating-api
+    newName: hostel-food-rating-api
+    newTag: local
+
+configMapGenerator:
+  - name: hostel-food-config
+    behavior: merge
+    literals:
+      - CORS_ORIGINS=http://hostel-food.localtest.me:8080
+      # The load test hammers the API from one IP; keep rate limits out of the HPA demo's way.
+      - RATE_LIMIT_AUTH=1000/minute
+      - RATE_LIMIT_RATINGS=1000/minute
+
+secretGenerator:
+  # Dev-only values for a throwaway kind cluster. Real clusters: see k8s/base/secret.example.yaml.
+  - name: hostel-food-secrets
+    behavior: replace
+    type: Opaque
+    literals:
+      - JWT_SECRET=kind-local-dev-only-jwt-secret-not-for-production-0123456789
+      - POSTGRES_PASSWORD=kind-local-dev-password
+      - DATABASE_URL=postgresql+psycopg://hostel:kind-local-dev-password@postgres:5432/hostel_food
+
+patches:
+  - path: deployment-patch.yaml
+  - target:
+      kind: Ingress
+      name: hostel-food-api
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: hostel-food.localtest.me

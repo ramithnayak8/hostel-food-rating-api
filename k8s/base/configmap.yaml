@@ -1,0 +1,28 @@
+# Non-secret configuration. Secrets (JWT_SECRET, POSTGRES_PASSWORD, DATABASE_URL) live in secret.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hostel-food-config
+data:
+  ENV: "production"
+  LOG_LEVEL: "INFO"
+  DOCS_ENABLED: "true"
+  CORS_ORIGINS: "https://hostel-food.example.com"
+  MAX_REQUEST_BODY_BYTES: "65536"
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+  DB_POOL_TIMEOUT: "30"
+  DB_POOL_RECYCLE: "1800"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_AUTH: "10/minute"
+  RATE_LIMIT_RATINGS: "30/minute"
+  # memory:// counts per pod. Point this at Redis (redis://redis:6379) for limits shared across replicas.
+  RATE_LIMIT_STORAGE_URI: "memory://"
+  FLAG_THRESHOLD: "2.0"
+  FLAG_MIN_RATINGS: "3"
+  # The `migrate` initContainer runs `alembic upgrade head`; the API container must not.
+  RUN_MIGRATIONS: "false"
+  POSTGRES_USER: "hostel"
+  POSTGRES_DB: "hostel_food"

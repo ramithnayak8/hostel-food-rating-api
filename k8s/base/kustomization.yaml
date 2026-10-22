@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hostel-food
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: hostel-food
+      app.kubernetes.io/managed-by: kustomize
+    # Selectors stay as written in each manifest; selectors are immutable on Deployments/StatefulSets.
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+images:
+  # CI deploys pin a commit SHA with `kubectl set image`; edit OWNER to your GitHub user/org.
+  - name: ghcr.io/OWNER/hostel-food-rating-api
+    newTag: latest
