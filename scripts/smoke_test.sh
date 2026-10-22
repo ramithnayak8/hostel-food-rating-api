@@ -165,7 +165,12 @@ expect 403 "students cannot see flagged meals"
 request GET /admin/flagged-meals "" "$ADMIN_TOKEN"
 expect 200 "admin sees flagged meals"
 
-request GET /metrics
+# Counters are per process; behind a load balancer keep scraping until we hit the pod that
+# served the rating.
+for _ in $(seq 1 20); do
+  request GET /metrics
+  grep -q '^ratings_submitted_total{meal_type="lunch"}' "$BODY_FILE" && break
+done
 expect 200 "GET /metrics after rating"
 grep -q '^ratings_submitted_total{meal_type="lunch"}' "$BODY_FILE" || fail "ratings_submitted_total recorded"
 PASSED=$((PASSED + 1))
