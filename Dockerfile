@@ -19,11 +19,20 @@ COPY requirements.txt .
 # Every dependency ships manylinux wheels, so no compiler is needed. `--no-compile` keeps
 # .pyc files out of the image; pip/setuptools are removed from the venv afterwards because
 # nothing installs packages at runtime.
+# Native extensions ship with debug symbols (uvloop alone is 16 MB); `strip` lives only in this
+# throwaway stage and roughly halves the size of those libraries. Unpinned on purpose: it never
+# reaches the final image, and pinned Debian versions break as soon as the archive moves on.
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends binutils \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN pip wheel --wheel-dir /wheels -r requirements.txt \
  && python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-index --find-links /wheels --no-compile -r requirements.txt \
  && /opt/venv/bin/pip uninstall -y pip setuptools \
- && find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} +
+ && find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} + \
+ && find /opt/venv -name "*.so*" -type f -exec strip --strip-unneeded {} +
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime
@@ -47,7 +56,10 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app \
     PATH="/opt/venv/bin:${PATH}" \
-    RUN_MIGRATIONS=true
+    RUN_MIGRATIONS=true \
+    MALLOC_ARENA_MAX=2
+# MALLOC_ARENA_MAX: argon2 allocates 19 MiB per hash on uvicorn's worker threads; glibc's default
+# per-thread arenas keep that memory after each hash, so a login burst grew RSS until OOMKilled.
 
 # Pick up Debian security fixes published after the base image was built, then drop apt lists.
 # The unprivileged user gets a fixed uid/gid so Kubernetes securityContext can match it.
