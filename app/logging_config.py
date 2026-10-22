@@ -37,7 +37,11 @@ def configure_logging(level: str = "INFO") -> None:
     root.setLevel(level)
 
     # Uvicorn installs its own plain-text handlers; send everything through ours instead.
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for name in ("uvicorn", "uvicorn.error"):
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+    # RequestContextMiddleware writes the access log (with request IDs); don't duplicate it.
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers = []
+    access_logger.propagate = False
