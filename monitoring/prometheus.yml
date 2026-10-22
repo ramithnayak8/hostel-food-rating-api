@@ -1,0 +1,23 @@
+# Prometheus config for the Docker Compose "monitoring" profile.
+# For Kubernetes, see monitoring/k8s-scrape-example.yml (annotation-based pod discovery).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: hostel-food-rating-api
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: hostel-food-api
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: hostel-food-api
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

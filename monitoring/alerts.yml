@@ -1,0 +1,73 @@
+# Alerting rules for the Hostel Food Rating API.
+# Metric names come from prometheus-fastapi-instrumentator (exact status codes, /metrics and /health* excluded)
+# plus the app's custom metrics (ratings_submitted_total, flagged_meals, database_up, ...).
+groups:
+  - name: hostel-food-api.availability
+    rules:
+      - alert: InstanceDown
+        expr: up{job="hostel-food-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API instance {{ $labels.instance }} is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} for more than 1 minute."
+
+      - alert: DatabaseDown
+        expr: max(database_up) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API cannot reach PostgreSQL"
+          description: "database_up has been 0 for 2 minutes; /health/ready is returning 503 and pods are out of rotation."
+
+  - name: hostel-food-api.slo
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="hostel-food-api", status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total{job="hostel-food-api"}[5m])), 1e-9)
+            > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of API requests are failing with 5xx"
+          description: "5xx ratio is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_highr_seconds_bucket{job="hostel-food-api"}[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency above 1s"
+          description: "p95 latency is {{ $value | humanizeDuration }} over the last 5 minutes."
+
+  - name: hostel-food-api.business
+    rules:
+      - alert: FlaggedMealsPresent
+        expr: max(flagged_meals) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} meal(s) flagged for poor ratings"
+          description: "At least one meal averages below FLAG_THRESHOLD with >= FLAG_MIN_RATINGS ratings. See GET /admin/flagged-meals."
+
+  - name: hostel-food-api.kubernetes
+    rules:
+      # Only fires when kube-state-metrics is scraped by this Prometheus; otherwise the series is absent
+      # and the rule stays silent (it never errors).
+      - alert: PodRestarting
+        expr: increase(kube_pod_container_status_restarts_total{namespace="hostel-food"}[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod }} restarted more than 3 times in 15 minutes"
+          description: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping. Requires kube-state-metrics."
