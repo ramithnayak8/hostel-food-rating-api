@@ -1,0 +1,71 @@
+# Single-VM production deployment (alternative to Kubernetes).
+# The image is pulled from GHCR; nothing is built on the server.
+#
+#   cp .env.example .env   # then set ENV-specific values: strong JWT_SECRET, DB password, IMAGE
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# scripts/deploy_vm.sh wraps these steps and waits for /health.
+name: hostel-food
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    image: ${IMAGE:?set IMAGE, e.g. ghcr.io/<owner>/hostel-food-rating-api:latest}
+    env_file: .env
+    environment:
+      ENV: production
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16.15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    # No published ports: only the api container can reach the database.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    logging: *default-logging
+
+volumes:
+  pgdata:

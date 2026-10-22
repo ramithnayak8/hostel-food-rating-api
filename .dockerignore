@@ -1,0 +1,16 @@
+# Allow-list: the build context only contains what the image needs.
+# Everything else (tests, docs, k8s, monitoring, .venv, .git, .env, caches) stays out.
+*
+
+!requirements.txt
+!alembic.ini
+!alembic/
+!app/
+!scripts/
+!entrypoint.sh
+
+# Never ship bytecode or local caches even from allowed folders.
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
