@@ -245,7 +245,8 @@ DATABASE_URL=postgresql+psycopg://hostel:hostel-dev-password@localhost:5432/host
 - **Runs as a non-root user** with uid/gid `10001`. The app writes nothing to disk, so it works with a read-only root filesystem.
 - **`HEALTHCHECK`** calls `http://127.0.0.1:8000/health` with Python's `urllib`, so curl isn't needed in the image.
 - **`entrypoint.sh`** runs `alembic upgrade head` when `RUN_MIGRATIONS=true`, then `exec`s uvicorn so `SIGTERM` reaches the server and shutdown is graceful.
-- **Size target:** under 150 MB. Check it with `docker images hostel-food-rating-api:local`.
+- **Size:** 54 MiB compressed (what GHCR stores and pulls). Uncompressed, the layers total about 191 MB: 134 MB is the `python:3.12-slim` base itself and 57 MB is the virtualenv, whose native extensions are `strip`ped in the builder stage. Because the base alone is close to 150 MB, the 150 MB target is met for the compressed (registry) size, not the unpacked size. `docker images` shows about 249 MB under Docker's containerd image store, which counts stored blobs as well.
+- **Memory:** the image sets `MALLOC_ARENA_MAX=2`. Without it, argon2's 19 MiB per-hash allocations spread across uvicorn's worker threads, and a login burst OOM-killed 192Mi pods during load testing.
 
 ```bash
 docker build -t hostel-food-rating-api:local .
@@ -507,36 +508,35 @@ These choices were made where the brief left room:
 
 ## Verification status
 
-The project was built on a Windows machine **without Docker, kubectl or kind**. This is what was actually run, and what wasn't.
-
-**Run and passing:**
+Everything below was run on the development machine (Windows 11, Docker Desktop 29.9, kind 0.33, kubectl 1.36):
 
 | Check | Result |
 |---|---|
 | `ruff check .` and `ruff format --check .` | clean |
-| `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | 88 passed, 98.3% coverage |
-| The same suite on real PostgreSQL 16.2 (`DATABASE_URL=postgresql+psycopg://…`) | 88 passed, 97.9% coverage |
-| `alembic upgrade head` → `alembic check` → `downgrade base` → `upgrade head`, on SQLite and on PostgreSQL | no drift; round-trip clean |
-| uvicorn started with the image's exact `CMD` flags and `ENV=production`, on migrated PostgreSQL, then `bash scripts/smoke_test.sh` (admin created with `python -m scripts.create_admin`) | **PASS: 34 checks** |
-| `python -m scripts.seed_demo_data` run twice | 28 meals and 250 ratings, then 0 new ratings (idempotent); one meal flagged, visible in `/admin/flagged-meals` and as `flagged_meals 1.0` |
-| `kustomize build k8s/overlays/local` and `k8s/base`, piped to `kubeconform -strict` (Kubernetes 1.33) | 15/15 resources valid in each |
-| `actionlint`, plus `check-jsonschema` for the workflow, dependabot and both Compose files | clean |
-| `promtool check rules` / `check config`, and `promtool test rules` for 3 alerts | clean |
-| `hadolint Dockerfile`, `yamllint` (all YAML), `bash -n` and shellcheck on all shell scripts | clean |
-| Every pinned image tag and GitHub Action ref | confirmed to exist |
+| `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | **88 passed, 98.3% coverage** |
+| The same suite on real PostgreSQL 16 | **88 passed, 97.9% coverage** |
+| Alembic `upgrade head` → `check` → `downgrade base` → `upgrade head`, on SQLite and on PostgreSQL | no drift; round-trip clean |
+| `docker build` | 54 MiB compressed (about 191 MB unpacked; see [Docker](#docker)) |
+| `docker run` with no database | runs as `uid=10001(app)`; HEALTHCHECK turns **healthy** |
+| `cp .env.example .env && docker compose up -d --build --wait`, then `bash scripts/smoke_test.sh` | all services healthy, migrations ran in the entrypoint; **PASS: 34 checks** |
+| `docker compose --profile monitoring up` | Prometheus target `up`; 6 alert rules loaded (`FlaggedMealsPresent` pending on the seeded flagged meal); Grafana datasource OK; all 16 panel queries return data |
+| `bash scripts/kind-up.sh`, then the smoke test through ingress-nginx at `hostel-food.localtest.me:8080` | **PASS: 34 checks** |
+| NetworkPolicies on kind | a pod outside the namespace is blocked from Postgres and the API; API → Postgres is allowed |
+| `make loadtest`: Locust, 60 users for 3 min, against kind | HPA scaled **2 → 4 → 6**; 0 pod restarts; 0.9% failures (ingress 503s in the first minute while 2 pods were saturated, before scale-out); memory peaked at 188 MiB out of 256 MiB |
+| `kubectl apply --dry-run=client` and `--dry-run=server` on the overlay | 15/15 resources accepted |
+| kubeconform, actionlint, check-jsonschema (workflow, dependabot, compose), promtool, hadolint, yamllint, shellcheck | clean |
+| `pip-audit -r requirements.txt` | no known vulnerabilities |
+| Trivy image scan (`--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1`) | exit 0 |
 
-**Not run here** (no Docker, kubectl or kind available). Run these yourself; CI runs the first two on every push:
+Fixes made because of these runs:
 
-```bash
-docker build -t hostel-food-rating-api:local . && docker images hostel-food-rating-api:local   # size target < 150 MB
-docker run -d --name hf -e RUN_MIGRATIONS=false hostel-food-rating-api:local && sleep 25 \
-  && docker inspect -f '{{.State.Health.Status}} user={{.Config.User}}' hf && docker rm -f hf  # -> healthy user=10001:10001
-cp .env.example .env && docker compose up -d --build --wait && bash scripts/smoke_test.sh && docker compose down -v
-bash scripts/kind-up.sh          # kind cluster, ingress-nginx, metrics-server, apply -k, smoke test hint
-docker compose --profile monitoring up -d   # then open Grafana at http://localhost:3000
-```
+- Startup-probe budget: kind pods were killed while still importing under CPU throttling.
+- `MALLOC_ARENA_MAX=2`: pods were OOM-killed during login bursts.
+- Smoke test: it now retries the per-pod `/metrics` counter behind the load balancer.
+- Error-rate panels: they now show 0% instead of "No data" when there are no 5xx responses.
+- Uvicorn's duplicate access log is silenced.
 
-The image size has not been measured. `python:3.12-slim` alone is roughly 120 MB uncompressed, so the final image may land somewhat above 150 MB uncompressed, although the compressed size pushed to GHCR will be much smaller. The CI build job reports the size in the job summary and warns if it exceeds 150 MB.
+**Not run here:** the GitHub Actions pipeline itself (it needs the repo pushed) and the `deploy` job (it needs `KUBECONFIG` or SSH secrets).
 
 ---
 
