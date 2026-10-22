@@ -135,7 +135,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * sum(rate(http_requests_total{job=\"hostel-food-api\", status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{job=\"hostel-food-api\"}[5m])), 1e-9)",
+          "expr": "100 * (sum(rate(http_requests_total{job=\"hostel-food-api\", status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total{job=\"hostel-food-api\"}[5m])), 1e-9)",
           "legendFormat": "",
           "refId": "A",
           "range": false,
@@ -659,7 +659,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * sum(rate(http_requests_total{job=\"hostel-food-api\", status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{job=\"hostel-food-api\"}[5m])), 1e-9)",
+          "expr": "100 * (sum(rate(http_requests_total{job=\"hostel-food-api\", status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total{job=\"hostel-food-api\"}[5m])), 1e-9)",
           "legendFormat": "5xx %",
           "refId": "A",
           "range": true
