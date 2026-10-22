@@ -1,0 +1,52 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, python]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "chore(docker)"
+    ignore:
+      # Stay on the Python 3.12 line until the project deliberately upgrades.
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "chore(compose)"
+    ignore:
+      # PostgreSQL major upgrades need a dump/restore; do them by hand.
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions:
+        patterns: ["*"]

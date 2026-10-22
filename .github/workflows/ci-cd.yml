@@ -1,0 +1,385 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# One run per ref; superseded PR runs are cancelled, main runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  IMAGE_BASENAME: hostel-food-rating-api
+  K8S_NAMESPACE: hostel-food
+  K8S_DEPLOYMENT: hostel-food-api
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install ruff (version pinned in requirements-dev.txt)
+        run: pip install "$(grep -E '^ruff==' requirements-dev.txt)"
+      - name: ruff check
+        run: ruff check --output-format=github .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hostel
+          POSTGRES_PASSWORD: hostel-ci-password
+          POSTGRES_DB: hostel_food_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hostel -d hostel_food_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENV: test
+      DATABASE_URL: postgresql+psycopg://hostel:hostel-ci-password@localhost:5432/hostel_food_test
+      JWT_SECRET: ci-only-test-secret-not-used-anywhere-else-0123456789
+      LOG_LEVEL: WARNING
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Migrations round-trip (upgrade head, downgrade base)
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+      - name: Run tests with coverage
+        run: pytest --cov=app --cov-report=xml --cov-report=term --cov-fail-under=85
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install pip-audit
+        run: pip install "$(grep -E '^pip-audit==' requirements-dev.txt)"
+      - name: pip-audit (runtime dependencies)
+        run: pip-audit -r requirements.txt --strict --progress-spinner off
+      - name: Trivy filesystem scan (vulnerabilities + secrets)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Trivy config scan (Dockerfile, k8s; report only)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          format: table
+
+  manifests:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-kubectl@v5
+      - name: Render kustomize overlay and validate with kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubectl kustomize k8s/overlays/local > rendered.yaml
+          kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.33.0 rendered.yaml
+      - name: promtool check config + rules
+        run: |
+          docker run --rm -v "$PWD/monitoring:/etc/prometheus:ro" --entrypoint promtool \
+            prom/prometheus:v3.15.1 check config /etc/prometheus/prometheus.yml
+          docker run --rm -v "$PWD/monitoring:/etc/prometheus:ro" --entrypoint promtool \
+            prom/prometheus:v3.15.1 check rules /etc/prometheus/alerts.yml
+      - name: Docker Compose files parse
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml --profile monitoring config --quiet
+          docker compose -f docker-compose.prod.yml config --quiet
+
+  build:
+    name: Build & scan image
+    needs: [lint, test, security, manifests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Docker metadata (tags + OCI labels)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=${{ env.IMAGE_BASENAME }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build image (load locally for scanning)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_BASENAME }}:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Report image size
+        run: |
+          bytes=$(docker image inspect "${IMAGE_BASENAME}:ci" --format '{{.Size}}')
+          mb=$((bytes / 1024 / 1024))
+          echo "Image size: ${mb} MB" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$mb" -ge 150 ]; then echo "::warning::Image is ${mb} MB (target < 150 MB)"; fi
+
+      - name: Smoke-test container (non-root + /health)
+        run: |
+          docker run -d --name api-smoke -e RUN_MIGRATIONS=false -p 8000:8000 "${IMAGE_BASENAME}:ci"
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health
+          test "$(docker exec api-smoke id -u)" = "10001"
+          docker rm -f api-smoke
+
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_BASENAME }}:ci
+          scan-type: image
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: "1"
+          format: table
+
+      - name: Log in to GHCR
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (main only; layers come from the GHA cache)
+        id: push
+        if: env.PUSH == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+
+      - name: Summary
+        if: env.PUSH == 'true'
+        run: |
+          {
+            echo "### Pushed"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_BASE_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE_REF: ${{ needs.build.outputs.image }}:${{ github.sha }}
+      DEPLOY_STRATEGY: ${{ vars.DEPLOY_STRATEGY || 'k8s' }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+      # Secrets cannot be referenced in step `if:` conditions, so expose them as env and test that.
+      KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      # Relative paths resolve from the SSH user's home directory (for ssh and scp alike).
+      VM_DEPLOY_DIR: ${{ vars.VM_DEPLOY_DIR || 'hostel-food' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Nothing to deploy to
+        if: >-
+          (env.DEPLOY_STRATEGY == 'k8s' && env.KUBECONFIG_DATA == '') ||
+          (env.DEPLOY_STRATEGY == 'vm' && (env.SSH_HOST == '' || env.SSH_PRIVATE_KEY == ''))
+        run: |
+          echo "::notice::Deploy skipped: DEPLOY_STRATEGY=${DEPLOY_STRATEGY} but its secrets are not configured."
+          echo "Deploy skipped (no credentials for strategy '${DEPLOY_STRATEGY}'). Image: ${IMAGE_REF}" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------- Strategy: Kubernetes ----------
+      - name: Set up kubectl
+        if: env.DEPLOY_STRATEGY == 'k8s' && env.KUBECONFIG_DATA != ''
+        uses: azure/setup-kubectl@v5
+
+      - name: Write kubeconfig (raw or base64)
+        if: env.DEPLOY_STRATEGY == 'k8s' && env.KUBECONFIG_DATA != ''
+        run: |
+          umask 077
+          if printf '%s' "$KUBECONFIG_DATA" | grep -q 'apiVersion'; then
+            printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kubeconfig"
+          else
+            printf '%s' "$KUBECONFIG_DATA" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          fi
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Roll out new image
+        id: k8s
+        if: env.DEPLOY_STRATEGY == 'k8s' && env.KUBECONFIG_DATA != ''
+        run: |
+          kubectl -n "$K8S_NAMESPACE" set image "deployment/$K8S_DEPLOYMENT" \
+            api="$IMAGE_REF" migrate="$IMAGE_REF"
+          kubectl -n "$K8S_NAMESPACE" annotate "deployment/$K8S_DEPLOYMENT" \
+            kubernetes.io/change-cause="CI ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})" --overwrite
+          kubectl -n "$K8S_NAMESPACE" rollout status "deployment/$K8S_DEPLOYMENT" --timeout=300s
+
+      - name: Roll back on failed rollout
+        if: failure() && steps.k8s.outcome == 'failure'
+        run: kubectl -n "$K8S_NAMESPACE" rollout undo "deployment/$K8S_DEPLOYMENT"
+
+      # ---------- Strategy: single VM over SSH ----------
+      - name: Set up SSH
+        if: env.DEPLOY_STRATEGY == 'vm' && env.SSH_HOST != '' && env.SSH_PRIVATE_KEY != ''
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::SSH_KNOWN_HOSTS not set; trusting the host key on first use."
+            ssh-keyscan -H "$SSH_HOST" > ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy to VM (docker compose pull && up -d)
+        id: vm
+        if: env.DEPLOY_STRATEGY == 'vm' && env.SSH_HOST != '' && env.SSH_PRIVATE_KEY != ''
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Remote values are expanded client-side on purpose and %q-quoted for the remote shell.
+          target="${SSH_USER:-deploy}@${SSH_HOST}"
+          ssh_opts=(-i ~/.ssh/id_deploy -o BatchMode=yes)
+          printf -v dir '%q' "$VM_DEPLOY_DIR"
+          printf -v image '%q' "$IMAGE_REF"
+          printf -v actor '%q' "$GITHUB_ACTOR"
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" "mkdir -p $dir"
+          scp "${ssh_opts[@]}" docker-compose.prod.yml scripts/deploy_vm.sh "$target:${VM_DEPLOY_DIR}/"
+          # Token goes over stdin, never on the remote command line.
+          # shellcheck disable=SC2029
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$target" \
+            "docker login ghcr.io -u $actor --password-stdin"
+          # shellcheck disable=SC2029
+          ssh "${ssh_opts[@]}" "$target" \
+            "chmod +x $dir/deploy_vm.sh && DEPLOY_DIR=$dir $dir/deploy_vm.sh $image"
+
+      # ---------- Post-deploy smoke test ----------
+      - name: Post-deploy smoke test (/health)
+        if: env.PUBLIC_BASE_URL != '' && (steps.k8s.outcome == 'success' || steps.vm.outcome == 'success')
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS "${PUBLIC_BASE_URL%/}/health"; then
+              echo
+              SMOKE_MODE=health BASE_URL="$PUBLIC_BASE_URL" bash scripts/smoke_test.sh
+              exit 0
+            fi
+            echo "attempt $i: not healthy yet"; sleep 6
+          done
+          echo "::error::${PUBLIC_BASE_URL}/health did not return 200"
+          exit 1
+
+      - name: Deployment summary
+        if: steps.k8s.outcome == 'success' || steps.vm.outcome == 'success'
+        run: echo "Deployed \`${IMAGE_REF}\` via ${DEPLOY_STRATEGY}" >> "$GITHUB_STEP_SUMMARY"
