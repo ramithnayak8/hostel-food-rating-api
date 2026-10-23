@@ -10,7 +10,7 @@ resources:
 
 images:
   # Built by scripts/kind-up.sh and loaded into the cluster with `kind load docker-image`.
-  - name: ghcr.io/OWNER/hostel-food-rating-api
+  - name: ghcr.io/ramithnayak8/hostel-food-rating-api
     newName: hostel-food-rating-api
     newTag: local
 

@@ -1,8 +1,6 @@
 # Hostel Food Rating API
 
-[![CI/CD](https://github.com/OWNER/HOSTEL_FOOD_RATING_API/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/OWNER/HOSTEL_FOOD_RATING_API/actions/workflows/ci-cd.yml)
-
-> Replace `OWNER` in the badge URL with your GitHub user or organisation after you push the repo.
+[![CI/CD](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci-cd.yml)
 
 Students rate every hostel meal (overall score, taste, hygiene, quantity and an optional comment); wardens publish menus and see what's working and what isn't. Daily and weekly stats show trends and the best- and worst-rated dishes. When a meal's average drops below 2.0 across at least 3 ratings, it is automatically flagged as a complaint.
 
@@ -356,9 +354,9 @@ This is the alternative to Kubernetes: a single Linux VM with Docker.
 
 ```bash
 # on the VM, once
-git clone https://github.com/OWNER/HOSTEL_FOOD_RATING_API.git && cd HOSTEL_FOOD_RATING_API
-cp .env.example .env    # then edit: ENV=production, strong JWT_SECRET, DB password, IMAGE=ghcr.io/owner/hostel-food-rating-api:latest
-echo "$GHCR_TOKEN" | docker login ghcr.io -u OWNER --password-stdin   # only if the package is private
+git clone https://github.com/ramithnayak8/hostel-food-rating-api.git && cd hostel-food-rating-api
+cp .env.example .env    # then edit: ENV=production, strong JWT_SECRET, DB password, IMAGE=ghcr.io/ramithnayak8/hostel-food-rating-api:latest
+echo "$GHCR_TOKEN" | docker login ghcr.io -u ramithnayak8 --password-stdin   # only if the package is private
 
 # every deploy (CI does this over SSH when DEPLOY_STRATEGY=vm)
 bash scripts/deploy_vm.sh

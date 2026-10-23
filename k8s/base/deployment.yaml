@@ -58,7 +58,7 @@ spec:
         # Applies pending Alembic migrations before the API starts. env.py takes a Postgres
         # advisory lock, so several pods starting at once cannot race each other.
         - name: migrate
-          image: ghcr.io/OWNER/hostel-food-rating-api:latest
+          image: ghcr.io/ramithnayak8/hostel-food-rating-api:latest
           imagePullPolicy: Always
           command: ["alembic", "upgrade", "head"]
           envFrom:
@@ -85,7 +85,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: api
-          image: ghcr.io/OWNER/hostel-food-rating-api:latest
+          image: ghcr.io/ramithnayak8/hostel-food-rating-api:latest
           imagePullPolicy: Always
           ports:
             - name: http

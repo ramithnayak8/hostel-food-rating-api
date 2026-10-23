@@ -24,6 +24,6 @@ resources:
   - networkpolicy.yaml
 
 images:
-  # CI deploys pin a commit SHA with `kubectl set image`; edit OWNER to your GitHub user/org.
-  - name: ghcr.io/OWNER/hostel-food-rating-api
+  # CI deploys pin a commit SHA with `kubectl set image`.
+  - name: ghcr.io/ramithnayak8/hostel-food-rating-api
     newTag: latest
