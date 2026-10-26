@@ -4,7 +4,7 @@
 
 Students rate every hostel meal (overall score, taste, hygiene, quantity and an optional comment); wardens publish menus and see what's working and what isn't. Daily and weekly stats show trends and the best- and worst-rated dishes. When a meal's average drops below 2.0 across at least 3 ratings, it is automatically flagged as a complaint.
 
-**Stack:** Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16, Pydantic v2, PyJWT, argon2id, slowapi, Prometheus and Grafana. The image is built with Docker and deployed by GitHub Actions to GHCR, then to Kubernetes (kind locally) or a single VM.
+**Stack:** Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16, Pydantic v2, PyJWT, argon2id, slowapi, Prometheus and Grafana. GitHub Actions builds the image with Docker and publishes it to GHCR. It runs on Kubernetes (kind, locally) or a single VM; the CI deploy job is in place but stays idle until deploy secrets for a reachable cluster or VM are added (see [CI/CD pipeline](#cicd-pipeline)).
 
 ---
 
@@ -287,11 +287,28 @@ The workflow uses concurrency groups to cancel superseded runs, least-privilege 
 
 Each deploy step is guarded, so a missing secret skips the step instead of failing the pipeline.
 
+**Current setup: local-only.** No deploy secrets are configured, because the only cluster is kind on a developer machine, and GitHub-hosted runners cannot reach its API server at `127.0.0.1`. Every push to `main` therefore ends with the notice *"Deploy skipped"*; the image is still built, scanned and published. To run the latest code, deploy to kind by hand:
+
+```bash
+bash scripts/kind-up.sh    # first time: creates the cluster and deploys everything
+make deploy-local          # afterwards: rebuild the image and roll it out
+```
+
+To deploy from CI later, create a cluster the internet can reach (any managed Kubernetes, or k3s on a VM), run `kubectl apply -k k8s/base` against it once with a real Secret (see `k8s/base/secret.example.yaml`), and add its kubeconfig as the `KUBECONFIG` secret.
+
 ---
 
 ## Branch protection
 
-In *Settings → Branches → Add branch ruleset* (or a classic rule) for `main`, enable:
+**Configured on this repo:** a branch ruleset named `protect-main`, active on the default branch (`main`), with these rules:
+
+- **Restrict deletions**
+- **Block force pushes**
+- **Require status checks to pass**: `Lint`, `Test`, `Security scan`, `Validate manifests`, `Build & scan image`, with **Require branches to be up to date before merging**
+
+`Deploy` is deliberately not a required check, because it is skipped while no deploy secrets exist. Because checks are required, changes reach `main` through a branch and a pull request.
+
+**Recommended once more than one person contributes.** In *Settings → Rules → Rulesets*, edit `protect-main` (or add a classic rule) to enable:
 
 1. **Require a pull request before merging**
    - Required approvals: **1**
@@ -534,7 +551,9 @@ Fixes made because of these runs:
 - Error-rate panels: they now show 0% instead of "No data" when there are no 5xx responses.
 - Uvicorn's duplicate access log is silenced.
 
-**Not run here:** the GitHub Actions pipeline itself (it needs the repo pushed) and the `deploy` job (it needs `KUBECONFIG` or SSH secrets).
+**On GitHub:** the first GitHub Actions run on `main` (2026-10-23) passed Lint, Test, Security scan, Validate manifests and Build & scan image, and published `ghcr.io/ramithnayak8/hostel-food-rating-api`. Dependabot's first update checks passed as well. The `protect-main` ruleset was confirmed through the GitHub API on 2026-10-24.
+
+**Not exercised:** the real `deploy` job, because it needs `KUBECONFIG` or SSH secrets for a cluster or VM that GitHub can reach. It takes its skip path on every run; see [CI/CD pipeline](#cicd-pipeline).
 
 ---
 
