@@ -239,11 +239,15 @@ DATABASE_URL=postgresql+psycopg://hostel:hostel-dev-password@localhost:5432/host
 
 ## Docker
 
-- **Multi-stage `Dockerfile`:** the builder stage compiles wheels and installs them into a virtualenv. The final stage is `python:3.12-slim` with only that virtualenv and the app code, and no compilers.
+- **Multi-stage `Dockerfile`:** the builder stage compiles wheels (including psycopg's C extension, built against Debian's libpq) and installs them into a virtualenv. A `system` stage takes `python:3.12-slim`, applies Debian security updates, adds `libpq5` and deletes tooling the API never runs (pip, ensurepip, IDLE, tkinter, lib2to3). The final stage starts `FROM scratch` and copies that filesystem in as one flattened layer, then adds the virtualenv and the app code. No compilers ship.
 - **Runs as a non-root user** with uid/gid `10001`. The app writes nothing to disk, so it works with a read-only root filesystem.
 - **`HEALTHCHECK`** calls `http://127.0.0.1:8000/health` with Python's `urllib`, so curl isn't needed in the image.
 - **`entrypoint.sh`** runs `alembic upgrade head` when `RUN_MIGRATIONS=true`, then `exec`s uvicorn so `SIGTERM` reaches the server and shutdown is graceful.
-- **Size:** 54 MiB compressed (what GHCR stores and pulls). Uncompressed, the layers total about 191 MB: 134 MB is the `python:3.12-slim` base itself and 57 MB is the virtualenv, whose native extensions are `strip`ped in the builder stage. Because the base alone is close to 150 MB, the 150 MB target is met for the compressed (registry) size, not the unpacked size. `docker images` shows about 249 MB under Docker's containerd image store, which counts stored blobs as well.
+- **Size:** about 140 MiB unpacked, under the 150 MB target that CI checks, and about 47 MiB compressed (what GHCR stores and pulls). The pruned base is about 107 MiB and the virtualenv about 32 MiB. Three things keep it there:
+  - psycopg's C extension links Debian's `libpq5` (about 4 MB) instead of the 19 MB of libraries bundled in `psycopg[binary]`. `requirements.txt` keeps `psycopg[binary]`, so local installs and CI tests need no compiler.
+  - Native extensions are `strip`ped, and Cython sources are deleted, in the builder stage.
+  - Flattening the base means the files that `apt-get upgrade` replaces and the deleted tooling don't linger in lower layers.
+  `docker images` shows about 209 MB under Docker's containerd image store, which counts stored blobs as well.
 - **Memory:** the image sets `MALLOC_ARENA_MAX=2`. Without it, argon2's 19 MiB per-hash allocations spread across uvicorn's worker threads, and a login burst OOM-killed 192Mi pods during load testing.
 
 ```bash
@@ -531,7 +535,7 @@ Everything below was run on the development machine (Windows 11, Docker Desktop 
 | `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | **88 passed, 98.3% coverage** |
 | The same suite on real PostgreSQL 16 | **88 passed, 97.9% coverage** |
 | Alembic `upgrade head` → `check` → `downgrade base` → `upgrade head`, on SQLite and on PostgreSQL | no drift; round-trip clean |
-| `docker build` | 54 MiB compressed (about 191 MB unpacked; see [Docker](#docker)) |
+| `docker build` | about 140 MiB unpacked, 47 MiB compressed (see [Docker](#docker)); psycopg runs its C implementation against libpq 17 |
 | `docker run` with no database | runs as `uid=10001(app)`; HEALTHCHECK turns **healthy** |
 | `cp .env.example .env && docker compose up -d --build --wait`, then `bash scripts/smoke_test.sh` | all services healthy, migrations ran in the entrypoint; **PASS: 34 checks** |
 | `docker compose --profile monitoring up` | Prometheus target `up`; 6 alert rules loaded (`FlaggedMealsPresent` pending on the seeded flagged meal); Grafana datasource OK; all 16 panel queries return data |
