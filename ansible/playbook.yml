@@ -1,0 +1,36 @@
+---
+# Configure the app server(s) and deploy the Hostel Food Rating API:
+#
+#   ansible-playbook -i inventory playbook.yml
+#
+# The host starts bare (no Python). The pre-task bootstraps Python 3 over raw SSH so Ansible's
+# modules can run; the hostel_food_app role then installs the runtime, deploys the .pyz
+# artifact and runs it as a systemd service.
+
+- name: Deploy the Hostel Food Rating API
+  hosts: app_servers
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Bootstrap Python 3 on a bare host
+      ansible.builtin.raw: >-
+        if [ -x /usr/bin/python3 ]; then echo present;
+        else export DEBIAN_FRONTEND=noninteractive && apt-get update -qq
+        && apt-get install -y -qq python3 python3-apt >/dev/null && echo installed; fi
+      register: python_bootstrap
+      changed_when: "'installed' in python_bootstrap.stdout"
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  roles:
+    - hostel_food_app
+
+  post_tasks:
+    - name: Smoke-test the API through its public port
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/meals"
+        return_content: true
+      register: meals_response
+      failed_when: meals_response.status != 200 or 'items' not in meals_response.json

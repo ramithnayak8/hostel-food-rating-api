@@ -1,0 +1,11 @@
+---
+# Handlers run only when a task reports a change, and in this order: reload, then restart.
+
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart hostel-food-api
+  ansible.builtin.systemd_service:
+    name: "{{ app_service_name }}"
+    state: restarted

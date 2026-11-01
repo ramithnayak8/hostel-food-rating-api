@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Hostel Food Rating API ({{ app_artifact_path | basename }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_user }}
+EnvironmentFile={{ app_env_file }}
+WorkingDirectory={{ app_data_dir }}
+ExecStart=/usr/bin/python3 {{ app_installed_artifact }} --host {{ app_bind_address }} --port {{ app_port }}
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

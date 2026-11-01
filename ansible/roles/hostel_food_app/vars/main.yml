@@ -1,0 +1,9 @@
+---
+# Fixed by the role; not meant to be overridden.
+app_service_name: hostel-food-api
+app_runtime_packages:
+  - python3
+  - ca-certificates
+app_installed_artifact: "{{ app_home }}/hostel-food-api.pyz"
+app_env_file: "{{ app_config_dir }}/hostel-food.env"
+app_secret_file: "{{ app_config_dir }}/jwt_secret"

@@ -1,0 +1,21 @@
+---
+# Overridable settings for the hostel_food_app role (group_vars/app_servers.yml sets some of these).
+
+# Port the API listens on. The systemd unit, the health check and the summary all use it.
+app_port: 8000
+# Interface to bind; 0.0.0.0 so the API is reachable from outside the host.
+app_bind_address: 0.0.0.0
+
+# The build artifact to deploy: the executable .pyz from scripts/build_artifact.sh. Empty means
+# "the newest dist/hostel-food-api-*.pyz in this repository".
+app_artifact: ""
+
+app_user: hostelfood
+app_home: /opt/hostel-food
+app_config_dir: /etc/hostel-food
+app_data_dir: /var/lib/hostel-food
+
+app_env: production
+app_log_level: INFO
+# Swagger UI at /docs stays on for demos; set false to hide it in production.
+app_docs_enabled: true
