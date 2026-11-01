@@ -97,7 +97,10 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin" \
     LANG=C.UTF-8 \
     RUN_MIGRATIONS=true \
+    DATABASE_URL=sqlite:////tmp/hostel_food.db \
     MALLOC_ARENA_MAX=2
+# DATABASE_URL: a plain `docker run` works on SQLite in /tmp, the only writable path for the runtime
+# user. Compose and Kubernetes set their own PostgreSQL URL, which overrides this.
 # MALLOC_ARENA_MAX: argon2 allocates 19 MiB per hash on uvicorn's worker threads; glibc's default
 # per-thread arenas keep that memory after each hash, so a login burst grew RSS until OOMKilled.
 

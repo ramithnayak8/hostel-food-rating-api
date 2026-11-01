@@ -308,7 +308,7 @@ The `.pyz` needs only Python 3.12. It applies the migrations to a local SQLite d
 
 ```bash
 docker build -t hostel-food-rating-api:local .
-docker run --rm -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/app.db -e RUN_MIGRATIONS=true hostel-food-rating-api:local
+docker run --rm -p 8000:8000 hostel-food-rating-api:local    # SQLite in /tmp unless DATABASE_URL is set
 docker inspect --format '{{.State.Health.Status}}' <container-id>    # -> healthy
 ```
 
