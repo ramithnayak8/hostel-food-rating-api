@@ -383,7 +383,7 @@ JENKINS_ADMIN_PASSWORD='choose-one' docker compose -f jenkins/docker-compose.yml
 | **Package** | Runs `scripts/build_artifact.sh` and archives the wheel, sdist and versioned `.pyz` in the job view. |
 | **Docker image** | Builds `hostel-food-rating-api:<version tag>` and checks that the app imports inside it. |
 
-Every artifact and image name carries the build number and commit SHA, so any build traces back to the exact code that produced it. A first build has no revision to compare against, so it needs one manual run (*Build Now*); polling takes over after that.
+Every artifact and image name carries the build number and commit SHA, so any build traces back to the exact code that produced it. A new job has no earlier build, so its first poll starts build #1 by itself; after that, a build runs only when `main` has a new commit.
 
 ---
 
@@ -677,7 +677,7 @@ Everything below was run on the development machine (Windows 11, Docker Desktop 
 | `ruff check .` and `ruff format --check .` | clean |
 | `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | **103 passed, 98.4% coverage** |
 | The same suite on real PostgreSQL 16 | Run by the **Test** job in CI on every push |
-| Jenkins pipeline, against a local Git repository | Build #5 **started by an SCM change**: all 6 stages passed, 3 artifacts archived, image `hostel-food-rating-api:b5-54d89fb` built |
+| Jenkins pipeline, polling this GitHub repository | Build #1 **started by an SCM change** on merge commit `f61c4d2`: all 6 stages passed, 3 artifacts archived, image `hostel-food-rating-api:b1-f61c4d2` built |
 | `ansible-playbook -i inventory playbook.yml` on a bare Ubuntu 24.04 host | `failed=0`, `changed=9`, both handlers ran; a second run gave `changed=0` with no handlers; the app answers on port 8081 |
 | `kubectl scale` 3 → 5 → 3 on kind | 5 pods Running, then back to 3 |
 | `bash scripts/rollback-demo.sh` on kind | The broken pod stayed in `ErrImagePull`, `/health` stayed at 200, and `rollout undo` restored `hostel-food-rating-api:local` |
