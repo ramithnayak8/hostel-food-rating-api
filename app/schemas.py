@@ -143,6 +143,12 @@ class RatingOut(ResponseModel):
     rated_by: Rater | None = None
 
 
+class MyRating(RatingOut):
+    """One of the current user's own ratings, with the meal it belongs to."""
+
+    meal: MealOut
+
+
 # --- Stats ------------------------------------------------------------------------------------
 
 
