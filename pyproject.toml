@@ -1,21 +1,42 @@
+# Packaging (the Maven/Gradle step): scripts/build_artifact.sh runs `python -m build` for the
+# wheel and sdist, then bundles the wheel and every dependency into one executable
+# dist/hostel-food-api-<version>.pyz with shiv. Jenkins archives these; Ansible deploys the .pyz.
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "hostel-food-rating-api"
-version = "1.0.0"
+version = "1.1.0"
 description = "Students rate hostel meals; wardens see what's working and what isn't."
 requires-python = ">=3.12"
 license = { text = "MIT" }
+dynamic = ["dependencies"]
+
+[project.scripts]
+hostel-food-api = "app.cli:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+# Migrations ship inside the package so the artifact can set up its own database.
+app = ["static/*", "static/**/*", "migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["alembic/versions"]
+extend-exclude = ["app/migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "C4", "RET", "PT", "N"]
 ignore = ["B008"]  # FastAPI's Depends()/Query() in defaults is idiomatic
 
 [tool.ruff.lint.isort]
-# The local alembic/ folder would otherwise make ruff treat the alembic package as first-party.
+# Keep alembic classified as third-party next to the app's own migrations folder.
 known-third-party = ["alembic"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -29,6 +50,8 @@ addopts = "-q --strict-markers"
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# Migrations run through Alembic (CI round-trips them), not through the test suite.
+omit = ["app/migrations/*"]
 
 [tool.coverage.report]
 show_missing = true
