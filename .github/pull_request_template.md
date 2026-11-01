@@ -7,7 +7,7 @@
 - [ ] feat: new endpoint / behaviour
 - [ ] fix: bug fix
 - [ ] chore / ci / docs / refactor
-- [ ] Database migration included (`alembic/versions/...`)
+- [ ] Database migration included (`app/migrations/versions/...`)
 
 ## How was it tested?
 
