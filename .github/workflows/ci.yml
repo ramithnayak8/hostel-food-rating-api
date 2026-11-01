@@ -225,7 +225,7 @@ jobs:
 
       - name: Smoke-test container (non-root + /health)
         run: |
-          docker run -d --name api-smoke -e RUN_MIGRATIONS=false -p 8000:8000 "${IMAGE_BASENAME}:ci"
+          docker run -d --name api-smoke -p 8000:8000 "${IMAGE_BASENAME}:ci"
           for _ in $(seq 1 30); do
             curl -fsS http://localhost:8000/health && break
             sleep 2
