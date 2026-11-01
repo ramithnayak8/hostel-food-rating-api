@@ -1,0 +1,54 @@
+# Jenkins Configuration as Code: the admin user and the pipeline job, so a fresh Jenkins is
+# ready to build without clicking through the setup wizard.
+#
+# Job "hostel-food-rating-api":
+#   Source Code Management  Git, ${REPO_URL}, branch ${REPO_BRANCH}
+#   Build Triggers          Poll SCM every minute (* * * * *)
+#   Pipeline                Jenkinsfile from the repository (stages, tests, artifact archiving)
+jenkins:
+  systemMessage: "Hostel Food Rating API CI. Configured as code from jenkins/casc.yaml."
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          name: Admin
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8090/}"
+
+jobs:
+  - script: |
+      pipelineJob('hostel-food-rating-api') {
+        displayName('Hostel Food Rating API')
+        description('Checkout, install, lint, test, package (wheel, sdist, executable .pyz) and build a versioned Docker image. Polls the repository every minute.')
+        properties {
+          pipelineTriggers {
+            triggers {
+              pollSCM {
+                scmpoll_spec('* * * * *')
+              }
+            }
+          }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('${REPO_URL:-https://github.com/ramithnayak8/hostel-food-rating-api.git}')
+                }
+                branch('${REPO_BRANCH:-*/main}')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+      }
