@@ -11,7 +11,7 @@ This walkthrough takes about 15 minutes. It shows the whole delivery loop workin
 # Local cluster + app + monitoring
 cp .env.example .env
 bash scripts/kind-up.sh                                   # kind cluster, ingress, metrics-server, app
-curl -s http://hostel-food.localtest.me:8080/health       # {"status":"ok","version":"1.0.0"}
+curl -s http://hostel-food.localtest.me:8080/health       # {"status":"ok","version":"1.1.0"}
 
 kubectl -n hostel-food exec deploy/hostel-food-api -c api -- \
   python -m scripts.create_admin --email warden@hostel.example.com \
@@ -27,6 +27,7 @@ docker compose exec api python -m scripts.seed_demo_data
 
 Open these tabs:
 
+- The Thali web app at http://hostel-food.localtest.me:8080 (or http://localhost:8000 on compose)
 - Swagger at http://localhost:8000/docs
 - GitHub → Actions
 - Grafana at http://localhost:3000, dashboard *Hostel Food / Hostel Food Rating API*
@@ -36,9 +37,9 @@ Open these tabs:
 
 ```bash
 git checkout -b demo/bump-version
-# app/__init__.py: __version__ = "1.0.0"  ->  "1.1.0"
-sed -i 's/__version__ = "1.0.0"/__version__ = "1.1.0"/' app/__init__.py
-git commit -am "chore: bump version to 1.1.0"
+# app/__init__.py: __version__ = "1.1.0"  ->  "1.2.0"
+sed -i 's/__version__ = "1.1.0"/__version__ = "1.2.0"/' app/__init__.py
+git commit -am "chore: bump version to 1.2.0"
 git push -u origin demo/bump-version
 gh pr create --fill          # or open the PR in the browser
 ```
@@ -68,12 +69,12 @@ On `main`, **Build & scan image** pushes `ghcr.io/<owner>/hostel-food-rating-api
 
 ```bash
 git checkout main && git pull
-docker build -t hostel-food-rating-api:1.1.0 .
-kind load docker-image hostel-food-rating-api:1.1.0 --name hostel-food
+docker build -t hostel-food-rating-api:1.2.0 .
+kind load docker-image hostel-food-rating-api:1.2.0 --name hostel-food
 kubectl -n hostel-food set image deployment/hostel-food-api \
-  api=hostel-food-rating-api:1.1.0 migrate=hostel-food-rating-api:1.1.0
+  api=hostel-food-rating-api:1.2.0 migrate=hostel-food-rating-api:1.2.0
 kubectl -n hostel-food rollout status deployment/hostel-food-api
-curl -s http://hostel-food.localtest.me:8080/health       # {"status":"ok","version":"1.1.0"}
+curl -s http://hostel-food.localtest.me:8080/health       # {"status":"ok","version":"1.2.0"}
 ```
 
 The `get pods -w` terminal shows new pods starting (init `migrate`, then `api` turning Ready) **before** old ones terminate. That's `maxUnavailable: 0`, so there's no downtime.
@@ -81,14 +82,14 @@ The `get pods -w` terminal shows new pods starting (init `migrate`, then `api` t
 ## 5. Grafana moves
 
 ```bash
-docker compose up -d --build api                          # compose API now reports 1.1.0 too
+docker compose up -d --build api                          # compose API now reports 1.2.0 too
 pip install -r requirements-loadtest.txt
 make loadtest BASE_URL=http://localhost:8000              # or: locust -f scripts/loadtest.py --host http://localhost:8000
 ```
 
 On the dashboard:
 
-- **App version** changes to `v1.1.0 (development)`.
+- **App version** changes to `v1.2.0 (development)`.
 - **Request rate by handler** and **Latency p50/p95/p99** climb while Locust runs.
 - **Ratings submitted per meal type** shows the rating traffic.
 - **Flagged meals** goes up if you post three 1-star ratings to a meal (see the bonus below).
@@ -97,7 +98,8 @@ To show the HPA, run the load test against kind and watch it scale:
 
 ```bash
 make loadtest BASE_URL=http://hostel-food.localtest.me:8080 &
-kubectl -n hostel-food get hpa -w                         # replicas 2 → up to 6 as CPU passes 60%
+kubectl apply -k k8s/overlays/local-autoscale             # the HPA is opt-in
+kubectl -n hostel-food get hpa -w                         # replicas 3 → up to 6 as CPU passes 60%
 ```
 
 ### Bonus: trigger the complaint flag live
@@ -149,11 +151,11 @@ If the auth rate limit (`RATE_LIMIT_AUTH`, 10 per minute per IP) trips during re
 **Kubernetes**
 
 - [ ] `kubectl -n hostel-food get pods -w` mid-rollout, with new pods Ready before old ones terminate
-- [ ] `kubectl -n hostel-food get hpa` scaled above 2 replicas during the load test
+- [ ] `kubectl -n hostel-food get hpa` scaled above 3 replicas during the load test
 
 **Grafana (http://localhost:3000)**
 
 - [ ] The full dashboard during a load test: request rate, p50/p95/p99, error %, in-flight requests
-- [ ] The *App version* stat before (1.0.0) and after (1.1.0)
+- [ ] The *App version* stat before (1.1.0) and after (1.2.0)
 - [ ] The *Flagged meals* stat in red, with the `FlaggedMealsPresent` alert on the Prometheus alerts page
 - [ ] The *Database* stat showing Up, and Down after `docker compose stop postgres` (start it again afterwards)

@@ -1,3 +1,4 @@
+import datetime as dt
 from collections.abc import Callable
 
 import pytest
@@ -160,6 +161,46 @@ def test_list_ratings_paginates(
 
 def test_list_ratings_missing_meal(client: TestClient, student_headers) -> None:
     assert client.get("/meals/9999/ratings", headers=student_headers).status_code == 404
+
+
+def test_my_ratings_lists_only_own_ratings_with_their_meals(
+    client: TestClient, register_student: Callable, make_meal: Callable, rate: Callable
+) -> None:
+    lunch = make_meal(menu=["Rajma", "Rice"])
+    dinner = make_meal(meal_type="dinner")
+    me, other = register_student(), register_student()
+    rate(lunch["id"], me, score=5)
+    rate(dinner["id"], me, score=2, comment="Cold")
+    rate(lunch["id"], other, score=1)
+
+    page = client.get("/auth/me/ratings", headers=me).json()
+
+    assert page["total"] == 2
+    assert [item["meal_id"] for item in page["items"]] == [dinner["id"], lunch["id"]]
+    assert page["items"][0]["comment"] == "Cold"
+    assert page["items"][1]["meal"]["menu_items"] == ["Rajma", "Rice"]
+    assert all(item["rated_by"] is None for item in page["items"])
+
+
+def test_my_ratings_filters_by_meal_date_and_paginates(
+    client: TestClient, student_headers, make_meal: Callable, rate: Callable
+) -> None:
+    monday = dt.date(2026, 10, 19)
+    for meal_type in ("breakfast", "lunch"):
+        rate(make_meal(date=monday, meal_type=meal_type)["id"], student_headers)
+    rate(make_meal(date=monday + dt.timedelta(days=1))["id"], student_headers)
+
+    on_monday = client.get(
+        "/auth/me/ratings", params={"date": str(monday), "limit": 1}, headers=student_headers
+    ).json()
+
+    assert on_monday["total"] == 2
+    assert len(on_monday["items"]) == 1
+    assert on_monday["items"][0]["meal"]["date"] == str(monday)
+
+
+def test_my_ratings_requires_auth(client: TestClient) -> None:
+    assert client.get("/auth/me/ratings").status_code == 401
 
 
 def test_rating_rate_limited(

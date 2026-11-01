@@ -1,12 +1,25 @@
 """Registration, login and the current user."""
 
-from fastapi import APIRouter, HTTPException, Request, status
+import datetime as dt
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import contains_eager
 
 from app.auth import CurrentUser, authenticate, create_access_token, hash_password
-from app.deps import DbSession, auth_rate_limit, limiter
-from app.models import Role, User
-from app.schemas import ErrorResponse, LoginRequest, Token, UserCreate, UserOut
+from app.deps import DbSession, PageParams, auth_rate_limit, limiter
+from app.models import Meal, Rating, Role, User
+from app.schemas import (
+    ErrorResponse,
+    LoginRequest,
+    MyRating,
+    Page,
+    Token,
+    UserCreate,
+    UserOut,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -73,3 +86,31 @@ def login(request: Request, payload: LoginRequest, db: DbSession) -> Token:
 def me(user: CurrentUser) -> User:
     """Return the account the bearer token belongs to."""
     return user
+
+
+@router.get("/me/ratings", response_model=Page[MyRating], summary="My ratings")
+def my_ratings(
+    user: CurrentUser,
+    db: DbSession,
+    page: PageParams,
+    date: Annotated[dt.date | None, Query(description="Only ratings of meals on this day")] = None,
+) -> Page[MyRating]:
+    """The current user's own ratings, newest first, each with its meal. Filter by the meal's
+    `date` to see which of a day's meals you have already rated."""
+    statement = select(Rating).join(Rating.meal).where(Rating.user_id == user.id)
+    if date is not None:
+        statement = statement.where(Meal.date == date)
+
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    ratings = db.scalars(
+        statement.options(contains_eager(Rating.meal))
+        .order_by(Rating.created_at.desc(), Rating.id.desc())
+        .limit(page.limit)
+        .offset(page.offset)
+    ).all()
+    return Page[MyRating](
+        items=[MyRating.model_validate(rating) for rating in ratings],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )

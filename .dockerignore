@@ -4,7 +4,6 @@
 
 !requirements.txt
 !alembic.ini
-!alembic/
 !app/
 !scripts/
 !entrypoint.sh

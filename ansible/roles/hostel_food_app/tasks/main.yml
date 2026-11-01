@@ -1,0 +1,115 @@
+---
+# Install the Python runtime, deploy the .pyz artifact and run it as a systemd service.
+# Re-running is safe: when nothing changed, nothing restarts.
+
+- name: Find the build artifact to deploy
+  ansible.builtin.set_fact:
+    app_artifact_path: >-
+      {{ app_artifact if app_artifact | length > 0 else
+         (query('ansible.builtin.fileglob', playbook_dir ~ '/../dist/hostel-food-api-*.pyz') | sort | last | default('')) }}
+
+- name: Check that the artifact exists
+  ansible.builtin.assert:
+    that:
+      - app_artifact_path | length > 0
+    fail_msg: >-
+      No dist/hostel-food-api-*.pyz found. Build it first with `make package`
+      (or bash scripts/build_artifact.sh on Linux), or pass -e app_artifact=/path/to/file.pyz.
+    quiet: true
+
+- name: Install the Python runtime
+  ansible.builtin.apt:
+    name: "{{ app_runtime_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the service account
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ app_data_dir }}"
+    create_home: false
+
+- name: Create the application directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ app_home }}", owner: root, group: root, mode: "0755" }
+    - { path: "{{ app_config_dir }}", owner: root, group: "{{ app_user }}", mode: "0750" }
+    - { path: "{{ app_data_dir }}", owner: "{{ app_user }}", group: "{{ app_user }}", mode: "0750" }
+
+- name: Copy the build artifact ({{ app_artifact_path | basename }})
+  ansible.builtin.copy:
+    src: "{{ app_artifact_path }}"
+    dest: "{{ app_installed_artifact }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart hostel-food-api
+
+- name: Generate the JWT signing secret (once, on the server)
+  ansible.builtin.shell: |
+    set -o pipefail
+    umask 077
+    head -c 48 /dev/urandom | base64 | tr -d '\n/+=' > {{ app_secret_file }}
+  args:
+    executable: /bin/bash
+    creates: "{{ app_secret_file }}"
+
+- name: Read the JWT signing secret
+  ansible.builtin.slurp:
+    src: "{{ app_secret_file }}"
+  register: app_jwt_secret
+  no_log: true
+
+- name: Write the environment file
+  ansible.builtin.template:
+    src: hostel-food.env.j2
+    dest: "{{ app_env_file }}"
+    owner: root
+    group: "{{ app_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Restart hostel-food-api
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: hostel-food-api.service.j2
+    dest: /etc/systemd/system/{{ app_service_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart hostel-food-api
+
+- name: Enable and start the service
+  ansible.builtin.systemd_service:
+    name: "{{ app_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before checking health
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the API to answer on port {{ app_port }}
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_port }}/health/ready"
+    return_content: true
+  register: app_ready
+  until: app_ready.status == 200
+  retries: 30
+  delay: 2
+
+- name: Show where the app is running
+  ansible.builtin.debug:
+    msg: >-
+      {{ app_service_name }} is {{ app_ready.json.status }} (database {{ app_ready.json.database }})
+      on {{ inventory_hostname }}:{{ app_port }}, running {{ app_artifact_path | basename }}.

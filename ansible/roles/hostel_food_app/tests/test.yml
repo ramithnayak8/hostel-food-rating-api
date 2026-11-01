@@ -1,0 +1,7 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Smoke-test the role against the test inventory
+  hosts: localhost
+  become: true
+  roles:
+    - hostel_food_app

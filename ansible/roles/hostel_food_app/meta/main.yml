@@ -1,0 +1,17 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  role_name: hostel_food_app
+  author: Ramith B Nayak
+  description: Install the Python runtime and run the Hostel Food Rating API (.pyz) as a systemd service
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+  galaxy_tags:
+    - fastapi
+    - python
+    - systemd
+
+dependencies: []

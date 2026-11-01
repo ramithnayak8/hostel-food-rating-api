@@ -21,6 +21,7 @@ from app.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.routers import admin, auth, health, meals, ratings, stats
+from app.web import register_web
 
 logger = logging.getLogger("app")
 
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
 
     for module in (health, auth, meals, ratings, stats, admin):
         app.include_router(module.router)
+    register_web(app)
 
     Instrumentator(
         should_group_status_codes=False,

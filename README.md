@@ -1,8 +1,10 @@
 # Hostel Food Rating API
 
-[![CI/CD](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci-cd.yml)
+[![CI/CD](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci.yml/badge.svg)](https://github.com/ramithnayak8/hostel-food-rating-api/actions/workflows/ci.yml)
 
 Students rate every hostel meal (overall score, taste, hygiene, quantity and an optional comment); wardens publish menus and see what's working and what isn't. Daily and weekly stats show trends and the best- and worst-rated dishes. When a meal's average drops below 2.0 across at least 3 ratings, it is automatically flagged as a complaint.
+
+The API ships with **Thali**, a web app served from the same origin at `/`. Students browse menus, rate meals and read anonymous reviews; wardens publish and edit menus and work through a complaints queue. See [Web app](#web-app).
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 16, Pydantic v2, PyJWT, argon2id, slowapi, Prometheus and Grafana. GitHub Actions builds the image with Docker and publishes it to GHCR. It runs on Kubernetes (kind, locally) or a single VM; the CI deploy job is in place but stays idle until deploy secrets for a reachable cluster or VM are added (see [CI/CD pipeline](#cicd-pipeline)).
 
@@ -12,18 +14,23 @@ Students rate every hostel meal (overall score, taste, hygiene, quantity and an 
 
 - [Architecture](#architecture)
 - [Quickstart (3 commands)](#quickstart-3-commands)
+- [Web app](#web-app)
 - [Configuration](#configuration)
 - [API](#api)
 - [Local development without Docker](#local-development-without-docker)
 - [Makefile targets](#makefile-targets)
 - [Testing](#testing)
+- [Build artifact](#build-artifact)
 - [Docker](#docker)
 - [CI/CD pipeline](#cicd-pipeline)
+- [Jenkins](#jenkins)
 - [Branch protection](#branch-protection)
+- [Ansible](#ansible)
 - [Kubernetes on kind](#kubernetes-on-kind)
 - [VM deployment](#vm-deployment)
 - [Monitoring](#monitoring)
 - [Load test and HPA demo](#load-test-and-hpa-demo)
+- [Assignment checklist](#assignment-checklist)
 - [Demo script](#demo-script)
 - [Security notes](#security-notes)
 - [Decisions](#decisions)
@@ -37,12 +44,12 @@ Students rate every hostel meal (overall score, taste, hygiene, quantity and an 
 ```mermaid
 flowchart LR
     subgraph Clients
-        S[Students / Wardens<br/>Swagger UI, curl, apps]
+        S[Students / Wardens<br/>Thali web app, Swagger UI, curl]
     end
 
     subgraph Cluster["Kubernetes (namespace hostel-food) or VM (docker compose)"]
         ING[Ingress nginx]
-        subgraph API["API pods (2–6, HPA)"]
+        subgraph API["API pods (3 replicas)"]
             A1[FastAPI + uvicorn<br/>:8000]
             A2[FastAPI + uvicorn<br/>:8000]
         end
@@ -80,7 +87,7 @@ Requirements: Docker with the Compose v2 plugin.
 ```bash
 cp .env.example .env
 docker compose up -d --build
-# open http://localhost:8000/docs
+# open http://localhost:8000 for the web app, or http://localhost:8000/docs for Swagger
 ```
 
 Create an admin (warden) account. Students self-register through `POST /auth/register`.
@@ -100,6 +107,32 @@ bash scripts/smoke_test.sh
 To use the API from Swagger, call `POST /auth/login` with `{"email": "...", "password": "..."}` and copy the `access_token`. Then click **Authorize** and paste the token.
 
 pgAdmin runs at http://localhost:5050. The credentials are the `PGADMIN_DEFAULT_*` values in `.env`.
+
+---
+
+## Web app
+
+Open `/` (http://localhost:8000 with Compose, http://hostel-food.localtest.me:8080 on kind). The site is plain HTML, CSS and ES modules in [`app/static/`](app/static/), served by FastAPI from the same origin as the API, so it needs no build step, no Node toolchain, no CORS setup and no extra container.
+
+| Page | Who | What it does |
+|---|---|---|
+| Home `#/` | Everyone | Live numbers from the API: the latest menu with scores, the week's best dish and the rating count. |
+| Menu `#/menu?date=` | Everyone | One card per meal with its average, star bar and taste/hygiene/quantity meters. Pick a day from the date strip. Shows "You rated 4/5" on meals you've already rated. |
+| Meal `#/meal/{id}` | Everyone; rating and reviews need a login | Score breakdown, a star-rating form for the four dimensions plus a comment, and the review feed. Wardens also see each rater's name and room, plus Edit and Delete. |
+| Insights `#/insights?end=` | Everyone | Week navigation, KPI tiles, an average-score line chart (fixed 1–5 scale) and a separate ratings-per-day bar chart, both with tooltips, keyboard focus and a table view. Top and bottom meals, and a meal-by-meal breakdown of the selected day. |
+| Login / Register | Visitors | Inline validation; friendly messages for wrong credentials, a taken email and rate limits. |
+| Profile `#/me` | Logged in | Account details and your rating history (from `GET /auth/me/ratings`). |
+| Warden's desk `#/warden` | Admins | Today's KPIs, the complaints queue (flagged meals), a publish form with a chip input for dishes, and day-by-day meal management. |
+
+How it stays robust and safe:
+
+- **No injected markup.** Pages are built with an auto-escaping `html` template, so names, comments and menu items always render as text. The page's Content-Security-Policy (`script-src 'self'`, no `unsafe-inline`, `frame-ancestors 'none'`) blocks inline scripts as a second line of defence.
+- **Failures become messages, not blank pages.** Every API call has a 15-second timeout and maps network errors, 401/403/404/409/422/429/5xx to a readable message. Each page shows a retry state when its data can't load, stale responses from a page you've left are dropped, and a global handler catches anything unexpected.
+- **Sessions:** the JWT lives in `localStorage` with its expiry; a `401` logs the user out and sends them back to the page they were on after logging in again.
+- **Caching:** assets are served with `Cache-Control: no-cache` plus ETags, and the entry files carry `?v=<version>`, so a deploy is picked up on the next load.
+- **Accessibility and devices:** keyboard-operable star inputs and charts, visible focus rings, `prefers-reduced-motion`, a light and dark theme, and layouts that collapse to one column on phones.
+
+[`tests/test_web.py`](tests/test_web.py) covers the page, its headers, static files and path traversal. The full click-through (register, rate, warden publish, edit and delete, dark mode, mobile, network failure) was run in Edge with Playwright; see [Verification status](#verification-status).
 
 ---
 
@@ -153,6 +186,7 @@ All request and response bodies are JSON. Errors always look like this:
 | `POST` | `/auth/register` | — | Registers a student (`name`, `email`, `room_no`, `password` of 8+ characters). Returns `201`. The role is always `student`. |
 | `POST` | `/auth/login` | — | JSON body `{email, password}`. Returns `{access_token, token_type: "bearer", expires_in}`. A wrong email and a wrong password get the same generic `401`. |
 | `GET` | `/auth/me` | Bearer | Returns the current user. |
+| `GET` | `/auth/me/ratings` | Bearer | The current user's own ratings, newest first, each with its meal. Optional `date` filter (the meal's date); paginated. |
 | `GET` | `/meals` | — | Lists meals. Filters: `date`, `meal_type`. Paginated with `limit` (capped) and `offset`. |
 | `POST` | `/meals` | Admin | Creates a meal: `{date, meal_type, menu_items[]}`. Returns `201`, or `409` if that date and meal type already exist. |
 | `GET` | `/meals/{id}` | — | Returns one meal, or `404`. |
@@ -164,6 +198,7 @@ All request and response bodies are JSON. Errors always look like this:
 | `GET` | `/stats/weekly?end_date=` | — | 7-day trend per day, the best- and worst-rated dish, and the top and bottom meals. |
 | `GET` | `/admin/flagged-meals` | Admin | Lists meals currently flagged as complaints. |
 | `GET` | `/docs`, `/redoc`, `/openapi.json` | — | Interactive OpenAPI docs. |
+| `GET` | `/`, `/static/*` | — | The Thali web app (not part of the OpenAPI schema). See [Web app](#web-app). |
 
 Every response carries an `X-Request-ID` header. Send your own value in that header to trace a request through the logs.
 
@@ -237,6 +272,27 @@ DATABASE_URL=postgresql+psycopg://hostel:hostel-dev-password@localhost:5432/host
 
 ---
 
+## Build artifact
+
+`scripts/build_artifact.sh` is this project's `mvn clean package`. Dependencies come from `pyproject.toml`, and it produces:
+
+| File in `dist/` | What it is |
+|---|---|
+| `hostel-food-api-<version>[-<suffix>].pyz` | One executable file with the app and every dependency, like a fat JAR. Built with [shiv](https://shiv.readthedocs.io/). |
+| `hostel_food_rating_api-<version>-py3-none-any.whl` | Installable wheel. |
+| `hostel_food_rating_api-<version>.tar.gz` | Source distribution. |
+
+```bash
+make package                                 # builds in a python:3.12-slim container
+python3 dist/hostel-food-api-1.1.0.pyz --port 8000
+curl -i http://localhost:8000/health
+curl -i http://localhost:8000/meals
+```
+
+The `.pyz` needs only Python 3.12. It applies the migrations to a local SQLite database and serves the API and the web app, so it runs without a database server. It bundles compiled dependencies for the OS that built it, so build it on Linux to run it on Linux.
+
+---
+
 ## Docker
 
 - **Multi-stage `Dockerfile`:** the builder stage compiles wheels (including psycopg's C extension, built against Debian's libpq) and installs them into a virtualenv. A `system` stage takes `python:3.12-slim`, applies Debian security updates, adds `libpq5` and deletes tooling the API never runs (pip, ensurepip, IDLE, tkinter, lib2to3). The final stage starts `FROM scratch` and copies that filesystem in as one flattened layer, then adds the virtualenv and the app code. No compilers ship.
@@ -267,14 +323,14 @@ Compose files:
 
 ## CI/CD pipeline
 
-`.github/workflows/ci-cd.yml` runs on pull requests and on pushes to `main`:
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`:
 
 | Job | What it does |
 |---|---|
 | **Lint** | `ruff check .` and `ruff format --check .` |
-| **Test** | Migration round-trip (`alembic upgrade head` / `downgrade base`), then `pytest --cov=app --cov-fail-under=85` against a `postgres:16` service container; uploads `coverage.xml` as an artifact. |
+| **Test** | Migration round-trip (`alembic upgrade head` / `downgrade base`), then `pytest --cov=app --cov-fail-under=85` against a `postgres:16` service container; uploads `coverage.xml` and the packaged wheel, sdist and `.pyz` as artifacts. |
 | **Security scan** | `pip-audit` on the pinned requirements, plus a Trivy filesystem scan. |
-| **Validate manifests** | Renders the kustomize overlay and checks it with kubeconform, runs `promtool` on the Prometheus config and alert rules, and parses both Compose files. |
+| **Validate manifests** | Renders both kustomize overlays and checks them with kubeconform, runs `promtool` on the Prometheus config and alert rules, parses every Compose file, and syntax-checks the Ansible playbook. |
 | **Build & scan image** | Docker Buildx with the GitHub Actions cache. Trivy scans the image and **fails on fixable HIGH or CRITICAL vulnerabilities**. On `main` only, pushes `ghcr.io/<owner>/hostel-food-rating-api` tagged with the git SHA and `latest`, with OCI labels. Authenticates with the built-in `GITHUB_TOKEN`. |
 | **Deploy** | Runs on `main` only, in the `production` environment. Picks a strategy from the repository variable `DEPLOY_STRATEGY` (see below), then runs a smoke test against `/health`. |
 
@@ -299,6 +355,35 @@ make deploy-local          # afterwards: rebuild the image and roll it out
 ```
 
 To deploy from CI later, create a cluster the internet can reach (any managed Kubernetes, or k3s on a VM), run `kubectl apply -k k8s/base` against it once with a real Secret (see `k8s/base/secret.example.yaml`), and add its kubeconfig as the `KUBECONFIG` secret.
+
+---
+
+## Jenkins
+
+GitHub Actions runs in the cloud; Jenkins runs the same idea on your own machine, in Docker. Plugins, the admin user and the job all come from code in [`jenkins/`](jenkins/), so nothing is clicked together by hand.
+
+```bash
+JENKINS_ADMIN_PASSWORD='choose-one' docker compose -f jenkins/docker-compose.yml up -d --build
+# open http://localhost:8090 and log in as admin
+```
+
+| Job setting | Value | Where it's set |
+|---|---|---|
+| Source Code Management | Git, this repository, branch `main` | `jenkins/casc.yaml` |
+| Build Triggers | Poll SCM every minute (`* * * * *`). A laptop Jenkins can't receive GitHub webhooks. | `jenkins/casc.yaml`, `Jenkinsfile` |
+| Build steps | The stages below | `Jenkinsfile` |
+| Post-build action | `archiveArtifacts` on `dist/*`, plus JUnit test results | `Jenkinsfile` |
+
+| Stage | What it does |
+|---|---|
+| **Checkout** | Reads the commit and sets the version tag `b<build number>-<7-character SHA>`. |
+| **Install** | Creates a fresh virtual environment and installs `requirements-dev.txt`. |
+| **Lint** | `ruff check` and `ruff format --check`. |
+| **Test** | `pytest` with JUnit output and an 85% coverage gate, before anything is packaged. |
+| **Package** | Runs `scripts/build_artifact.sh` and archives the wheel, sdist and versioned `.pyz` in the job view. |
+| **Docker image** | Builds `hostel-food-rating-api:<version tag>` and checks that the app imports inside it. |
+
+Every artifact and image name carries the build number and commit SHA, so any build traces back to the exact code that produced it. A first build has no revision to compare against, so it needs one manual run (*Build Now*); polling takes over after that.
 
 ---
 
@@ -329,6 +414,27 @@ To deploy from CI later, create a cluster the internet can reach (any managed Ku
 
 ---
 
+## Ansible
+
+[`ansible/`](ansible/) configures a bare Ubuntu 24.04 host and deploys the `.pyz` as a systemd service. The lab runs entirely in Docker: one control node and one managed host reached over SSH, so it works on Windows too.
+
+```bash
+make package                                                                # build the artifact first
+docker compose -f ansible/docker-compose.yml up -d --build app-server
+docker compose -f ansible/docker-compose.yml run --rm ansible \
+  ansible-playbook -i inventory playbook.yml
+curl http://localhost:8081/health
+```
+
+| Part | Where | What it does |
+|---|---|---|
+| Inventory | `ansible/inventory` | The `app_servers` group. Point `ansible_host` at a VM's IP to deploy there instead. |
+| Variables | `ansible/group_vars/app_servers.yml`, `roles/hostel_food_app/defaults/main.yml` | `app_port`, install paths and the environment. |
+| Role | `ansible/roles/hostel_food_app` | Generated with `ansible-galaxy init`. Installs the runtime, copies the artifact, writes the environment file and systemd unit, and starts the service. |
+| Handlers | `roles/hostel_food_app/handlers/main.yml` | Reload systemd and restart the app, only when a task changed something. A second playbook run reports `changed=0` and restarts nothing. |
+
+---
+
 ## Kubernetes on kind
 
 Prerequisites: Docker, [kind](https://kind.sigs.k8s.io/) and `kubectl`.
@@ -348,24 +454,34 @@ The API is then at **http://hostel-food.localtest.me:8080**. `localtest.me` reso
 
 ```bash
 curl http://hostel-food.localtest.me:8080/health
-kubectl -n hostel-food get pods,svc,ingress,hpa
+kubectl -n hostel-food get deployments,services,pods -o wide
 kubectl -n hostel-food exec deploy/hostel-food-api -c api -- python -m scripts.create_admin \
   --email warden@hostel.example.com --password 'change-me-admin-password' --name "Hostel Warden"
 bash scripts/kind-down.sh    # or: make kind-down
+```
+
+Scaling by hand and rolling back:
+
+```bash
+kubectl -n hostel-food scale deployment hostel-food-api --replicas=5
+kubectl -n hostel-food get pods
+kubectl -n hostel-food scale deployment hostel-food-api --replicas=3
+bash scripts/rollback-demo.sh    # deploys a broken image, then `kubectl rollout undo`
 ```
 
 Manifest layout (`k8s/base` plus `k8s/overlays/local`, managed by kustomize):
 
 - **Namespace and config:** the `hostel-food` namespace, a ConfigMap, and a Secret template. `secret.example.yaml` shows the shape; never commit real secrets.
 - **API `Deployment`:**
-  - 2 replicas, rolled out with `RollingUpdate` and `maxUnavailable: 0`.
+  - 3 replicas, rolled out with `RollingUpdate` and `maxUnavailable: 0`.
   - An initContainer named `migrate` runs `alembic upgrade head`.
   - Probes: liveness on `/health`, readiness on `/health/ready`, plus a startup probe.
   - Security context: `runAsNonRoot`, `readOnlyRootFilesystem`, all capabilities dropped.
   - Resource requests and limits, plus topology spread.
-- **Supporting objects:** a Service, an nginx Ingress, an HPA (CPU 60%, 2–6 replicas) and a PodDisruptionBudget.
+- **Supporting objects:** a Service, an nginx Ingress and a PodDisruptionBudget.
 - **PostgreSQL:** a StatefulSet with a headless Service and a PVC.
 - **NetworkPolicies:** deny by default, then allow ingress-nginx → API and API → Postgres.
+- **Optional HPA:** `k8s/components/autoscaling` (CPU 60%, 3–6 replicas), switched on by `k8s/overlays/local-autoscale`. It stays out of the base so a manual `kubectl scale` isn't undone by the autoscaler.
 
 ---
 
@@ -446,15 +562,42 @@ make loadtest BASE_URL=http://hostel-food.localtest.me:8080   # Locust headless;
 locust -f scripts/loadtest.py --host http://hostel-food.localtest.me:8080   # UI on http://localhost:8089
 ```
 
-To watch the autoscaler react, open a second terminal:
+To watch the autoscaler react, enable it and open a second terminal:
 
 ```bash
-kubectl -n hostel-food get hpa -w          # CPU climbs past 60% → replicas 2 → up to 6
+kubectl apply -k k8s/overlays/local-autoscale
+kubectl -n hostel-food get hpa -w          # CPU climbs past 60% → replicas 3 → up to 6
 kubectl -n hostel-food get pods -w
 kubectl top pods -n hostel-food            # needs metrics-server (installed by kind-up.sh)
 ```
 
-When the load stops, the HPA scales back to 2 replicas after its stabilization window, which is about 5 minutes by default. Locust users browse meals and stats and submit ratings. The auth endpoints are rate limited, so each simulated user logs in once.
+When the load stops, the HPA scales back to 3 replicas after its stabilization window, which is about 5 minutes by default. Locust users browse meals and stats and submit ratings. The auth endpoints are rate limited, so each simulated user logs in once. Run `kubectl -n hostel-food delete hpa hostel-food-api` to go back to manual scaling.
+
+---
+
+## Assignment checklist
+
+Where each DevOps assignment requirement lives, and the command that checks it. Commands that use `kubectl` assume `-n hostel-food`.
+
+| # | Requirement | In this repo | Check |
+|---|---|---|---|
+| 1.1 | Two or more branches and a merge commit | Feature branches merged through pull requests | `git log --oneline --graph --all` |
+| 1.2 | REST endpoints returning JSON with HTTP 200 | `app/routers/`. The `.pyz` runs on SQLite with no database server. | `curl -i http://localhost:8000/meals` |
+| 1.3 | Build tool producing an executable artifact | `pyproject.toml`, `scripts/build_artifact.sh` | `make package` |
+| 1.4 | Jenkins triggered by SCM, building and archiving | `Jenkinsfile`, `jenkins/` | Push to `main`, then open http://localhost:8090 |
+| 1.5 A | Test stage before packaging | `Test` stage in `Jenkinsfile` | Jenkins *Test Result* page |
+| 1.5 B | Artifact and image versioned by build and SHA | `VERSION_TAG` in `Jenkinsfile` | Archived `.pyz` name, `docker images` |
+| 1.5 C | GitHub Actions alongside Jenkins | `.github/workflows/ci.yml` | GitHub → Actions |
+| 2.1 | Ansible inventory, variable, handler, role | `ansible/` | `ansible-playbook -i inventory playbook.yml` (see [Ansible](#ansible)) |
+| 2.2 | Dockerfile packaging the app | `Dockerfile` | `docker build -t hostel-food-rating-api:local .` |
+| 2.3 | Deployment with 3 replicas and a Service | `k8s/base/deployment.yaml`, `k8s/base/service.yaml` | `kubectl get deployments,services,pods -o wide` |
+| 2.4 | Scaling from 3 to 5 and back | The Deployment; the HPA stays out of the way | `kubectl scale deployment hostel-food-api --replicas=5` |
+| 2.5 A | Rollback demo | `scripts/rollback-demo.sh` | `bash scripts/rollback-demo.sh` |
+| 2.5 B | ConfigMap | `k8s/base/configmap.yaml`, loaded with `envFrom` | `kubectl get configmap` |
+| 2.5 C | Liveness and readiness probes | `k8s/base/deployment.yaml` | `kubectl describe deployment hostel-food-api` |
+| 2.5 D | Multi-stage Dockerfile | `builder`, `system` and `runtime` stages | `Dockerfile` |
+
+The repository link for submission is in [`repo_link.txt`](repo_link.txt).
 
 ---
 
@@ -502,9 +645,9 @@ These choices were made where the brief left room:
 | Rate limiting | Per client IP, with in-memory counters by default, so each replica counts separately. Set `RATE_LIMIT_STORAGE_URI=redis://…` for accurate limits across replicas. |
 | Request validation | Request bodies use `extra="forbid"`, so a `role` field in `/auth/register` returns `422`. |
 | `PUT /meals/{id}` | Full replacement, not a partial update. |
-| Migrations | Never auto-created by the app. Alembic runs from the container entrypoint (Compose) or an initContainer (Kubernetes). `alembic/env.py` takes a **Postgres advisory lock**, so replicas migrating at the same moment are safe. |
+| Migrations | Never auto-created by the app. Alembic runs from the container entrypoint (Compose), an initContainer (Kubernetes) or the `.pyz` at startup. `app/migrations/env.py` takes a **Postgres advisory lock**, so replicas migrating at the same moment are safe. |
 | Load testing | Locust lives in a separate `requirements-loadtest.txt` so the dev install stays light. |
-| Server | Plain uvicorn, no gunicorn. Scale by adding replicas through the HPA. |
+| Server | Plain uvicorn, no gunicorn. Scale by adding replicas with `kubectl scale` or the optional HPA. |
 | Cluster scraping | No ServiceMonitor. Prometheus scrape annotations are used instead, so the Prometheus Operator isn't required. |
 
 ---
@@ -532,8 +675,12 @@ Everything below was run on the development machine (Windows 11, Docker Desktop 
 | Check | Result |
 |---|---|
 | `ruff check .` and `ruff format --check .` | clean |
-| `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | **88 passed, 98.3% coverage** |
-| The same suite on real PostgreSQL 16 | **88 passed, 97.9% coverage** |
+| `pytest --cov=app --cov-fail-under=85` on the SQLite fallback | **103 passed, 98.4% coverage** |
+| The same suite on real PostgreSQL 16 | Run by the **Test** job in CI on every push |
+| Jenkins pipeline, against a local Git repository | Build #5 **started by an SCM change**: all 6 stages passed, 3 artifacts archived, image `hostel-food-rating-api:b5-54d89fb` built |
+| `ansible-playbook -i inventory playbook.yml` on a bare Ubuntu 24.04 host | `failed=0`, `changed=9`, both handlers ran; a second run gave `changed=0` with no handlers; the app answers on port 8081 |
+| `kubectl scale` 3 → 5 → 3 on kind | 5 pods Running, then back to 3 |
+| `bash scripts/rollback-demo.sh` on kind | The broken pod stayed in `ErrImagePull`, `/health` stayed at 200, and `rollout undo` restored `hostel-food-rating-api:local` |
 | Alembic `upgrade head` → `check` → `downgrade base` → `upgrade head`, on SQLite and on PostgreSQL | no drift; round-trip clean |
 | `docker build` | about 140 MiB unpacked, 47 MiB compressed (see [Docker](#docker)); psycopg runs its C implementation against libpq 17 |
 | `docker run` with no database | runs as `uid=10001(app)`; HEALTHCHECK turns **healthy** |
@@ -541,7 +688,7 @@ Everything below was run on the development machine (Windows 11, Docker Desktop 
 | `docker compose --profile monitoring up` | Prometheus target `up`; 6 alert rules loaded (`FlaggedMealsPresent` pending on the seeded flagged meal); Grafana datasource OK; all 16 panel queries return data |
 | `bash scripts/kind-up.sh`, then the smoke test through ingress-nginx at `hostel-food.localtest.me:8080` | **PASS: 34 checks** |
 | NetworkPolicies on kind | a pod outside the namespace is blocked from Postgres and the API; API → Postgres is allowed |
-| `make loadtest`: Locust, 60 users for 3 min, against kind | HPA scaled **2 → 4 → 6**; 0 pod restarts; 0.9% failures (ingress 503s in the first minute while 2 pods were saturated, before scale-out); memory peaked at 188 MiB out of 256 MiB |
+| `make loadtest`: Locust, 60 users for 3 min, against kind, measured when the HPA started at 2 replicas | HPA scaled **2 → 4 → 6**; 0 pod restarts; 0.9% failures (ingress 503s in the first minute while 2 pods were saturated, before scale-out); memory peaked at 188 MiB out of 256 MiB |
 | `kubectl apply --dry-run=client` and `--dry-run=server` on the overlay | 15/15 resources accepted |
 | kubeconform, actionlint, check-jsonschema (workflow, dependabot, compose), promtool, hadolint, yamllint, shellcheck | clean |
 | `pip-audit -r requirements.txt` | no known vulnerabilities |

@@ -13,8 +13,8 @@ USERS     ?= 50
 SPAWN_RATE ?= 5
 DURATION  ?= 2m
 
-.PHONY: help install lint format test cov run migrate revision seed up down logs build scan \
-        smoke kind-up kind-down deploy-local loadtest monitoring-up clean
+.PHONY: help install lint format test cov run migrate revision seed up down logs build package \
+        scan smoke kind-up kind-down deploy-local loadtest monitoring-up clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -66,6 +66,10 @@ logs: ## Follow API logs
 build: ## Build the container image
 	docker build -t $(IMAGE) .
 	@docker image inspect $(IMAGE) --format 'image size: {{.Size}} bytes'
+
+package: ## Build the wheel, sdist and executable .pyz in a Linux container (mvn clean package equivalent)
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/src" -w /src python:3.12-slim bash -c \
+		'pip install -q --root-user-action=ignore --disable-pip-version-check $$(grep -E "^(build|shiv)==" requirements-dev.txt) && bash scripts/build_artifact.sh'
 
 scan: ## Audit dependencies (pip-audit) and the image (Trivy, if installed)
 	$(VENV_BIN)/pip-audit -r requirements.txt

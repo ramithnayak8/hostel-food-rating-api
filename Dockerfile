@@ -106,7 +106,6 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 # Code stays root-owned and read-only for the runtime user.
 COPY alembic.ini ./
-COPY alembic ./alembic
 COPY app ./app
 COPY scripts ./scripts
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh

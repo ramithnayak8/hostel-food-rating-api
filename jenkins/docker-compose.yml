@@ -1,0 +1,30 @@
+# Local Jenkins at http://localhost:8090 (user `admin`, password from JENKINS_ADMIN_PASSWORD).
+#
+#   docker compose -f jenkins/docker-compose.yml up -d --build
+#
+# The pipeline job is created from casc.yaml and polls the GitHub repository every minute, so a
+# `git push` to main starts a build on its own.
+name: hostel-food-jenkins
+
+services:
+  jenkins:
+    build: .
+    # Root inside the container so Jenkins can use the host's Docker socket (local lab setup).
+    user: root
+    ports:
+      - "8090:8080"
+    environment:
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false ${JENKINS_EXTRA_JAVA_OPTS:-}"
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc_configs
+      JENKINS_ADMIN_PASSWORD: "${JENKINS_ADMIN_PASSWORD:-change-me-jenkins}"
+      JENKINS_URL: "http://localhost:8090/"
+      REPO_URL: "${REPO_URL:-https://github.com/ramithnayak8/hostel-food-rating-api.git}"
+      REPO_BRANCH: "${REPO_BRANCH:-*/main}"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - ./casc.yaml:/var/jenkins_home/casc_configs/casc.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  jenkins_home:
