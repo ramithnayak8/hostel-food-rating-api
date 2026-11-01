@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create (or reuse) a local kind cluster and deploy the full stack into it:
-#   ingress-nginx + metrics-server (for the HPA) + Postgres + the API built from this checkout.
+#   ingress-nginx + metrics-server (for the optional HPA) + Postgres + the API built from this checkout.
 #
 # Usage: scripts/kind-up.sh            (env overrides: CLUSTER_NAME, IMAGE, SKIP_BUILD=1)
 set -euo pipefail
@@ -71,7 +71,7 @@ kubectl -n "$NAMESPACE" rollout restart deployment/hostel-food-api >/dev/null
 log "Waiting for Postgres and the API"
 kubectl -n "$NAMESPACE" rollout status statefulset/postgres --timeout=300s
 kubectl -n "$NAMESPACE" rollout status deployment/hostel-food-api --timeout=300s
-kubectl -n "$NAMESPACE" get pods,svc,ingress,hpa
+kubectl -n "$NAMESPACE" get deployments,services,pods -o wide
 
 cat <<EOF
 
@@ -87,8 +87,12 @@ Smoke test:
   BASE_URL=$HOST_URL ADMIN_EMAIL=warden@hostel.example.com ADMIN_PASSWORD='change-me-admin-password' \\
     CREATE_ADMIN_CMD="kubectl -n $NAMESPACE exec -i deploy/hostel-food-api -c api -- python -m scripts.create_admin" \\
     scripts/smoke_test.sh
-Watch autoscaling:
-  kubectl -n $NAMESPACE get hpa -w
+Scale by hand (3 -> 5 -> 3):
+  kubectl -n $NAMESPACE scale deployment hostel-food-api --replicas=5
+  kubectl -n $NAMESPACE get pods
+  kubectl -n $NAMESPACE scale deployment hostel-food-api --replicas=3
+Autoscaling demo (adds the HPA):
+  kubectl apply -k k8s/overlays/local-autoscale && kubectl -n $NAMESPACE get hpa -w
 Tear down:
   scripts/kind-down.sh
 EOF

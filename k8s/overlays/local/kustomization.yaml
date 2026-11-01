@@ -1,4 +1,4 @@
-# kind overlay: locally built image, smaller resource requests (so the HPA demo scales visibly),
+# kind overlay: locally built image, smaller resource requests (so the optional HPA demo scales visibly),
 # a localtest.me ingress host, and throwaway dev secrets. Never use this overlay outside kind.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

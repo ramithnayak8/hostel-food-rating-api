@@ -1,0 +1,11 @@
+# The kind overlay plus the HPA, for the load-test autoscaling demo:
+#   kubectl apply -k k8s/overlays/local-autoscale
+# Back to manual scaling: kubectl -n hostel-food delete hpa hostel-food-api
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../local
+
+components:
+  - ../../components/autoscaling

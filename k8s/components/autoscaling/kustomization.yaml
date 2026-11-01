@@ -1,0 +1,8 @@
+# Optional CPU autoscaling (HPA, 3 to 6 replicas at 60% CPU). Kept out of the base so a manual
+# `kubectl scale deployment hostel-food-api --replicas=5` isn't immediately undone by the HPA.
+# Enabled by k8s/overlays/local-autoscale for the load-test demo.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - hpa.yaml
