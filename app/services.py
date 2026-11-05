@@ -102,9 +102,12 @@ class _DishTally:
 
 
 def _tally_dishes(rows: Sequence[Row]) -> list[DishStats]:
-    """Credit every rating's score to each menu item of the rated meal (names case-insensitive)."""
+    """Credit every rating's score to each menu item of the rated meal (names case-insensitive).
+
+    A dish is shown with the spelling of its earliest serving, whatever order the rows come in.
+    """
     tallies: dict[str, _DishTally] = {}
-    for row in rows:
+    for row in sorted(rows, key=lambda r: (r.Meal.date, MEAL_ORDER[r.Meal.meal_type], r.Meal.id)):
         if not row.rating_count:
             continue
         for item in row.Meal.menu_items:
