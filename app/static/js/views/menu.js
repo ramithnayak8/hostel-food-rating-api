@@ -5,6 +5,8 @@ import {
   addDays,
   button,
   cap,
+  dishIndex,
+  dishList,
   dom,
   dow,
   errorBlock,
@@ -14,7 +16,6 @@ import {
   html,
   icon,
   isISODate,
-  menuLine,
   meters,
   mount,
   plural,
@@ -56,12 +57,15 @@ export async function render(ctx) {
 
   let daily;
   let mine = new Map();
+  let dishes = new Map();
   try {
-    const [stats, my] = await Promise.all([
+    const [stats, my, dishStats] = await Promise.all([
       api(`/stats/daily?date=${date}`),
       auth.loggedIn ? api(`/auth/me/ratings?date=${date}&limit=10`).catch(() => null) : null,
+      api("/stats/dishes").catch(() => null),
     ]);
     daily = stats;
+    dishes = dishIndex(dishStats);
     if (my) mine = new Map(my.items.map((r) => [r.meal_id, r]));
   } catch (err) {
     if (!ctx.alive()) return;
@@ -97,7 +101,7 @@ export async function render(ctx) {
 
   const byType = Object.fromEntries(meals.map((m) => [m.meal_type, m]));
   mount(grid, html`${MEAL_TYPES.map((type, i) =>
-    byType[type] ? mealCard(byType[type], mine.get(byType[type].meal_id), i) : ghostCard(type, date, i),
+    byType[type] ? mealCard(byType[type], mine.get(byType[type].meal_id), i, dishes) : ghostCard(type, date, i),
   )}`);
 }
 
@@ -117,7 +121,7 @@ function dateTools(date) {
   </div>`;
 }
 
-function mealCard(m, myRating, i) {
+function mealCard(m, myRating, i, dishes) {
   const future = m.date > todayISO();
   let foot;
   if (myRating) {
@@ -139,7 +143,7 @@ function mealCard(m, myRating, i) {
       <a class="meal-type" href="#/meal/${m.meal_id}"><span class="ico-tile">${icon(MEAL_ICONS[m.meal_type])}</span><h2>${cap(m.meal_type)}</h2></a>
       ${m.flagged ? html`<span class="badge critical">${icon("flag")}Flagged</span>` : ""}
     </div>
-    <p class="meal-items">${menuLine(m.menu_items)}</p>
+    ${dishList(m.menu_items, dishes)}
     <div class="meal-score">
       <div class="stack gap-1">
         <span class="big-num num">${fmt1(m.avg_score)}<small>/ 5</small></span>

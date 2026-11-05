@@ -2,7 +2,7 @@
 # Create (or reuse) a local kind cluster and deploy the full stack into it:
 #   ingress-nginx + metrics-server (for the optional HPA) + Postgres + the API built from this checkout.
 #
-# Usage: scripts/kind-up.sh            (env overrides: CLUSTER_NAME, IMAGE, SKIP_BUILD=1)
+# Usage: scripts/kind-up.sh            (env overrides: CLUSTER_NAME, IMAGE, SKIP_BUILD=1, NO_BROWSER=1)
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-hostel-food}"
@@ -96,3 +96,7 @@ Autoscaling demo (adds the HPA):
 Tear down:
   scripts/kind-down.sh
 EOF
+
+# shellcheck source=scripts/open-url.sh
+source scripts/open-url.sh
+open_url "$HOST_URL"

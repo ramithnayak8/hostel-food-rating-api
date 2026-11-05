@@ -6,8 +6,8 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from app.deps import DbSession
-from app.schemas import DailyStats, WeeklyStats
-from app.services import daily_stats, weekly_stats
+from app.schemas import DailyStats, DishStats, WeeklyStats
+from app.services import daily_stats, dish_stats, weekly_stats
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -45,3 +45,17 @@ def get_weekly_stats(
     * **top_meals / bottom_meals** - up to 3 rated meals with the highest / lowest average score.
     """
     return weekly_stats(db, end_date or _today())
+
+
+@router.get("/dishes", response_model=list[DishStats], summary="Average rating of every dish")
+def get_dish_stats(
+    db: DbSession,
+    end_date: Annotated[
+        dt.date | None, Query(description="Count meals served up to this day (default: today, UTC)")
+    ] = None,
+) -> list[DishStats]:
+    """One entry per dish (names matched case-insensitively), best first. As in the weekly
+    stats, every rating's score is credited to each menu item of the rated meal, so a dish's
+    average covers every meal that served it up to `end_date`. Dishes with no ratings yet are
+    left out."""
+    return dish_stats(db, end_date or _today())

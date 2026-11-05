@@ -6,6 +6,11 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: hostel-food
+# Pin the API server port. kind otherwise picks a random high port, and after a reboot Windows
+# (Hyper-V/WinNAT) can reserve that range, so the node would no longer start with its ports.
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
 nodes:
   - role: control-plane
     kubeadmConfigPatches:

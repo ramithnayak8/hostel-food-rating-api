@@ -4,13 +4,14 @@ import {
   MEAL_TYPES,
   button,
   cap,
+  dishIndex,
+  dishList,
   fmt1,
   fmt2,
   fmtDate,
   fmtInt,
   html,
   icon,
-  menuLine,
   mount,
   plural,
   relativeDay,
@@ -27,11 +28,14 @@ export async function render(ctx) {
   mount(ctx.el, page());
   const slot = ctx.el.querySelector("[data-slot='live']");
   try {
-    const weekly = await api(`/stats/weekly?end_date=${todayISO()}`);
+    const [weekly, dishStats] = await Promise.all([
+      api(`/stats/weekly?end_date=${todayISO()}`),
+      api("/stats/dishes").catch(() => null),
+    ]);
     const lastDay = [...weekly.days].reverse().find((d) => d.rating_count > 0);
     const daily = lastDay ? await api(`/stats/daily?date=${lastDay.date}`) : null;
     if (!ctx.alive()) return;
-    mount(slot, liveCards(weekly, daily));
+    mount(slot, liveCards(weekly, daily, dishIndex(dishStats)));
   } catch {
     if (!ctx.alive()) return;
     mount(slot, liveCards(null, null));
@@ -142,7 +146,7 @@ function liveSkeleton() {
     <div class="cascade-row"><div class="tilt t2">${card("")}</div><div class="tilt t3">${card("")}</div></div>`;
 }
 
-function liveCards(weekly, daily) {
+function liveCards(weekly, daily, dishes) {
   const meals = daily?.meals ?? [];
   const byType = Object.fromEntries(meals.map((m) => [m.meal_type, m]));
   const day = daily?.date;
@@ -158,7 +162,7 @@ function liveCards(weekly, daily) {
       ? MEAL_TYPES.filter((t) => byType[t]).map((t) => {
           const m = byType[t];
           return html`<div class="live-meal">
-            <div class="stack"><span class="type">${cap(t)}</span><span class="items">${menuLine(m.menu_items)}</span></div>
+            <div class="stack"><span class="type">${cap(t)}</span><span class="items">${dishList(m.menu_items, dishes, { compact: true })}</span></div>
             <div class="stack num" ><span class="score-pill ${m.flagged ? "critical" : ""}">${icon(m.flagged ? "flag" : "starFill")}${fmt1(m.avg_score)}</span></div>
           </div>`;
         })

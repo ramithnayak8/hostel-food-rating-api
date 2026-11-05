@@ -201,6 +201,12 @@ jobs:
             org.opencontainers.image.title=${{ env.IMAGE_BASENAME }}
             org.opencontainers.image.licenses=MIT
 
+      - name: Pick the security-refresh date
+        id: refresh
+        # Rebuilds the base image's `apt-get upgrade` layer once a day instead of reusing it
+        # from the GHA cache indefinitely.
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Build image (load locally for scanning)
         uses: docker/build-push-action@v7
         with:
@@ -213,6 +219,7 @@ jobs:
             VERSION=${{ github.sha }}
             VCS_REF=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
+            SECURITY_REFRESH=${{ steps.refresh.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -266,6 +273,7 @@ jobs:
             VERSION=${{ github.sha }}
             VCS_REF=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            SECURITY_REFRESH=${{ steps.refresh.outputs.date }}
           cache-from: type=gha
 
       - name: Summary

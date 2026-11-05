@@ -84,6 +84,10 @@ Request flow: every request gets an `X-Request-ID` header (generated or propagat
 
 Requirements: Docker with the Compose v2 plugin.
 
+**One command for a demo:** `.\start.cmd` from PowerShell or cmd (or double-click it), `bash scripts/start.sh` from Git Bash, or `make start`. It starts everything including Grafana and Prometheus, creates the warden account, loads the demo data, waits until the API is ready and then opens the web app in your browser. Set `NO_BROWSER=1` to skip opening it. `scripts/kind-up.sh` and the packaged `.pyz` also open the browser when they finish starting.
+
+Or step by step:
+
 ```bash
 cp .env.example .env
 docker compose up -d --build
@@ -97,7 +101,7 @@ docker compose exec api python -m scripts.create_admin \
   --email warden@hostel.example.com --password 'change-me-admin-password' --name "Hostel Warden"
 ```
 
-To load optional demo data (7 days of meals and ratings) and run an end-to-end smoke test:
+To load optional demo data (30 days of rated meals plus published menus for the next 14 days) and run an end-to-end smoke test:
 
 ```bash
 docker compose exec api python -m scripts.seed_demo_data
@@ -196,6 +200,7 @@ All request and response bodies are JSON. Errors always look like this:
 | `GET` | `/meals/{id}/ratings` | Bearer | Lists a meal's ratings, paginated. Emails are never shown. The rater's name and room are shown to admins only. |
 | `GET` | `/stats/daily?date=` | — | For each meal on the date: average score, taste, hygiene and quantity, plus the rating count. |
 | `GET` | `/stats/weekly?end_date=` | — | 7-day trend per day, the best- and worst-rated dish, and the top and bottom meals. |
+| `GET` | `/stats/dishes?end_date=` | — | Every rated dish with its average score and rating count across all meals that served it, best first. The web app shows these next to each dish. |
 | `GET` | `/admin/flagged-meals` | Admin | Lists meals currently flagged as complaints. |
 | `GET` | `/docs`, `/redoc`, `/openapi.json` | — | Interactive OpenAPI docs. |
 | `GET` | `/`, `/static/*` | — | The Thali web app (not part of the OpenAPI schema). See [Web app](#web-app). |

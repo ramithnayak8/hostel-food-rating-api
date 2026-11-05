@@ -270,6 +270,26 @@ export function menuLine(items) {
   return html`${list.map((item, i) => html`${i ? html` <span class="sep">&amp;</span> ` : ""}${item}`)}`;
 }
 
+/** Map of lower-cased dish name -> {name, avg_score, rating_count} from GET /stats/dishes. */
+export function dishIndex(list) {
+  return new Map((Array.isArray(list) ? list : []).map((d) => [String(d.name).toLowerCase(), d]));
+}
+
+/** Each dish of a menu with its own average rating next to it (or "New" when never rated). */
+export function dishList(items, dishes, { compact = false } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  return html`<ul class="dish-list ${compact ? "compact" : ""}">${list.map((item) => {
+    const d = dishes?.get(String(item).toLowerCase());
+    const low = d && d.avg_score < 2.5;
+    return html`<li class="dish">
+      <span class="dish-name">${item}</span>
+      ${d
+        ? html`<span class="dish-score ${low ? "critical" : ""}" title="${fmt1(d.avg_score)} out of 5 from ${plural(d.rating_count, "rating")}">${icon("starFill")}${fmt1(d.avg_score)}<small>${d.rating_count}</small></span>`
+        : html`<span class="dish-score new" title="Not rated yet">New</span>`}
+    </li>`;
+  })}</ul>`;
+}
+
 export function skeletonCards(count = 4, spans = ["span-6"]) {
   return html`${Array.from({ length: count }, (_, i) => html`<div class="bezel ${spans[i % spans.length]}"><div class="core stack gap-2">
     <div class="skeleton sk-line" data-frac="0"></div><div class="skeleton sk-title"></div><div class="skeleton sk-block"></div>

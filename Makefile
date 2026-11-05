@@ -13,7 +13,7 @@ USERS     ?= 50
 SPAWN_RATE ?= 5
 DURATION  ?= 2m
 
-.PHONY: help install lint format test cov run migrate revision seed up down logs build package \
+.PHONY: help install lint format test cov run migrate revision seed start up down logs build package \
         scan smoke kind-up kind-down deploy-local loadtest monitoring-up clean
 
 help: ## Show this help
@@ -50,8 +50,11 @@ revision: ## Autogenerate a migration: make revision m="add column x"
 	@test -n "$(m)" || (echo 'usage: make revision m="message"' && exit 1)
 	$(VENV_BIN)/alembic revision --autogenerate -m "$(m)"
 
-seed: ## Seed a week of demo meals, students and ratings
+seed: ## Seed 30 days of rated meals and 14 days of upcoming menus
 	$(PYTHON) -m scripts.seed_demo_data
+
+start: ## Demo: start everything, add the warden + demo data, open the web app in the browser
+	bash scripts/start.sh
 
 up: ## Start api + postgres + pgadmin with Docker Compose
 	test -f .env || cp .env.example .env

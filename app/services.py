@@ -102,9 +102,12 @@ class _DishTally:
 
 
 def _tally_dishes(rows: Sequence[Row]) -> list[DishStats]:
-    """Credit every rating's score to each menu item of the rated meal (names case-insensitive)."""
+    """Credit every rating's score to each menu item of the rated meal (names case-insensitive).
+
+    A dish is shown with the spelling of its earliest serving, whatever order the rows come in.
+    """
     tallies: dict[str, _DishTally] = {}
-    for row in rows:
+    for row in sorted(rows, key=lambda r: (r.Meal.date, MEAL_ORDER[r.Meal.meal_type], r.Meal.id)):
         if not row.rating_count:
             continue
         for item in row.Meal.menu_items:
@@ -112,6 +115,12 @@ def _tally_dishes(rows: Sequence[Row]) -> list[DishStats]:
             tally.score_sum += row.score_sum
             tally.rating_count += row.rating_count
     return [tally.stats() for tally in tallies.values()]
+
+
+def dish_stats(db: Session, end: dt.date) -> list[DishStats]:
+    """Every rated dish served on or before `end`, best first (ties: more ratings, then name)."""
+    dishes = _tally_dishes(_meal_stats_rows(db, Meal.date <= end))
+    return sorted(dishes, key=lambda d: (-d.avg_score, -d.rating_count, d.name.casefold()))
 
 
 def _day_trend(db: Session, start: dt.date, end: dt.date) -> list[DayTrend]:
