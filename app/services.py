@@ -114,6 +114,12 @@ def _tally_dishes(rows: Sequence[Row]) -> list[DishStats]:
     return [tally.stats() for tally in tallies.values()]
 
 
+def dish_stats(db: Session, end: dt.date) -> list[DishStats]:
+    """Every rated dish served on or before `end`, best first (ties: more ratings, then name)."""
+    dishes = _tally_dishes(_meal_stats_rows(db, Meal.date <= end))
+    return sorted(dishes, key=lambda d: (-d.avg_score, -d.rating_count, d.name.casefold()))
+
+
 def _day_trend(db: Session, start: dt.date, end: dt.date) -> list[DayTrend]:
     rows = db.execute(
         select(Meal.date, func.count(Rating.id), func.avg(Rating.score))

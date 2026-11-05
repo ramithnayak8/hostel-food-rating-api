@@ -50,7 +50,7 @@ revision: ## Autogenerate a migration: make revision m="add column x"
 	@test -n "$(m)" || (echo 'usage: make revision m="message"' && exit 1)
 	$(VENV_BIN)/alembic revision --autogenerate -m "$(m)"
 
-seed: ## Seed a week of demo meals, students and ratings
+seed: ## Seed 30 days of rated meals and 14 days of upcoming menus
 	$(PYTHON) -m scripts.seed_demo_data
 
 up: ## Start api + postgres + pgadmin with Docker Compose

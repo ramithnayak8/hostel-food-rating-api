@@ -1,6 +1,9 @@
-"""Fill the database with a week of demo meals, students and ratings. Safe to run repeatedly.
+"""Fill the database with demo meals, students and ratings. Safe to run repeatedly.
 
-    python -m scripts.seed_demo_data [--days 7] [--students 12]
+    python -m scripts.seed_demo_data [--days 30] [--ahead 14] [--students 12]
+
+Rated meals cover the last `--days` days (today included); menus for the next `--ahead` days
+are published without ratings, so every day around today has a menu.
 
 Students are seed-student-<n>@hostel.example.com with password "demo-password-123".
 One meal (yesterday's snacks) is deliberately rated badly so the complaint flag shows up.
@@ -87,7 +90,7 @@ def rate_meal(db: Session, meal: Meal, students: list[User], rng: random.Random,
     return added
 
 
-def seed(days: int, student_count: int, seed_value: int = 42) -> tuple[int, int]:
+def seed(days: int, student_count: int, ahead: int = 0, seed_value: int = 42) -> tuple[int, int]:
     today = dt.datetime.now(dt.UTC).date()
     bad_meal = (today - dt.timedelta(days=1), MealType.snacks)
     meals = ratings = 0
@@ -101,16 +104,22 @@ def seed(days: int, student_count: int, seed_value: int = 42) -> tuple[int, int]
                 meal = ensure_meal(db, day, meal_type, rng)
                 ratings += rate_meal(db, meal, students, rng, bad=(day, meal_type) == bad_meal)
                 meals += 1
+        for offset in range(1, ahead + 1):
+            day = today + dt.timedelta(days=offset)
+            for meal_type in MealType:
+                ensure_meal(db, day, meal_type, random.Random(f"{seed_value}-{day}-{meal_type}"))
+                meals += 1
         db.commit()
     return meals, ratings
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--days", type=int, default=30, help="past days with ratings")
+    parser.add_argument("--ahead", type=int, default=14, help="future days with menus only")
     parser.add_argument("--students", type=int, default=12)
     args = parser.parse_args(argv)
-    meals, ratings = seed(args.days, args.students)
+    meals, ratings = seed(args.days, args.students, args.ahead)
     print(f"seeded {meals} meals and {ratings} new ratings; student password: {DEMO_PASSWORD}")
     return 0
 

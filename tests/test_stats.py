@@ -177,3 +177,32 @@ def test_flag_respects_configured_thresholds(
 def test_flagged_meals_is_admin_only(client: TestClient, student_headers) -> None:
     assert client.get("/admin/flagged-meals").status_code == 401
     assert client.get("/admin/flagged-meals", headers=student_headers).status_code == 403
+
+
+def test_dish_stats_cover_every_serving_up_to_end_date(
+    client: TestClient, register_student: Callable, make_meal: Callable, rate: Callable
+) -> None:
+    alice, bob = register_student(), register_student()
+    lunch = make_meal(date=DAY - dt.timedelta(days=20), meal_type="lunch", menu=["Dal", "Rice"])
+    dinner = make_meal(date=DAY, meal_type="dinner", menu=["Paneer", "rice"])
+    later = make_meal(date=DAY + dt.timedelta(days=1), meal_type="lunch", menu=["Rajma"])
+    make_meal(date=DAY - dt.timedelta(days=1), meal_type="snacks", menu=["Samosa"])  # unrated
+    rate(lunch["id"], alice, score=2)
+    rate(lunch["id"], bob, score=4)
+    rate(dinner["id"], alice, score=5)
+    rate(later["id"], alice, score=1)  # after end_date: excluded
+
+    body = client.get("/stats/dishes", params={"end_date": str(DAY)}).json()
+
+    assert body == [
+        {"name": "Paneer", "avg_score": 5.0, "rating_count": 1},
+        {"name": "Rice", "avg_score": 3.67, "rating_count": 3},
+        {"name": "Dal", "avg_score": 3.0, "rating_count": 2},
+    ]
+
+
+def test_dish_stats_default_to_today(client: TestClient) -> None:
+    response = client.get("/stats/dishes")
+
+    assert response.status_code == 200
+    assert response.json() == []

@@ -12,6 +12,8 @@ import {
   html,
   icon,
   initials,
+  dishIndex,
+  dishList,
   menuLine,
   meters,
   mount,
@@ -51,12 +53,15 @@ export async function render(ctx) {
   let meal;
   let stats;
   let mine = null;
+  let dishes = new Map();
   try {
     meal = await api(`/meals/${id}`);
-    const [daily, my] = await Promise.all([
+    const [daily, my, dishStats] = await Promise.all([
       api(`/stats/daily?date=${meal.date}`),
       auth.loggedIn ? api(`/auth/me/ratings?date=${meal.date}&limit=10`).catch(() => null) : null,
+      api("/stats/dishes").catch(() => null),
     ]);
+    dishes = dishIndex(dishStats);
     stats = daily.meals.find((m) => m.meal_id === id) ?? null;
     mine = my?.items.find((r) => r.meal_id === id) ?? null;
   } catch (err) {
@@ -82,6 +87,7 @@ export async function render(ctx) {
           ${button({ label: "Delete", kind: "ghost", size: "sm", ico: "trash", action: "delete" })}
         </div>` : ""}
       </div>
+      <div class="meal-dishes reveal" data-i="3"><span class="card-label">Dish ratings · every serving so far</span>${dishList(meal.menu_items, dishes, { compact: true })}</div>
     </div>
     <div class="grid">
       <div class="bezel span-7 reveal"><div class="core">${scorePanel(stats)}</div></div>
