@@ -47,6 +47,10 @@ RUN sed -i 's/^psycopg\[binary\]==/psycopg[c]==/' requirements.txt \
 # ---------------------------------------------------------------------------
 FROM ${PYTHON_IMAGE} AS system
 
+# CI passes today's date here. A changed value invalidates the cached upgrade layer below, so
+# Debian security fixes are picked up at least daily even when the build cache is warm.
+ARG SECURITY_REFRESH=none
+
 # Pick up Debian security fixes published after the base image was built, add libpq for the
 # psycopg C extension, then drop apt lists.
 # The unprivileged user gets a fixed uid/gid so Kubernetes securityContext can match it.
