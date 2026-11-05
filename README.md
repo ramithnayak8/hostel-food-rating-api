@@ -84,6 +84,10 @@ Request flow: every request gets an `X-Request-ID` header (generated or propagat
 
 Requirements: Docker with the Compose v2 plugin.
 
+**One command for a demo:** `bash scripts/start.sh` (or `make start`) starts everything including Grafana and Prometheus, creates the warden account, loads the demo data, waits until the API is ready and then opens the web app in your browser. Set `NO_BROWSER=1` to skip opening it. `scripts/kind-up.sh` and the packaged `.pyz` also open the browser when they finish starting.
+
+Or step by step:
+
 ```bash
 cp .env.example .env
 docker compose up -d --build
