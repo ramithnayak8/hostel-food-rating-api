@@ -27,7 +27,7 @@ services:
     stop_grace_period: 30s
 
   postgres:
-    image: postgres:16.15
+    image: postgres:16.16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hostel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
